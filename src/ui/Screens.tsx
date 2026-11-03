@@ -1,4 +1,4 @@
-import type { CriterionResult, LoadCase, Results, Vessel } from '../engine/types';
+import type { CriteriaGroupResult, CriterionResult, LoadCase, Results, Vessel } from '../engine/types';
 import { f, unitFmt } from './format';
 import { GzChart } from './GzChart';
 
@@ -27,9 +27,15 @@ export function ResultsSidebar({ r, error }: { r: Results | null; error: string 
       <div className="kpi"><span>GM fluid</span><strong className={r.gmFluid >= 0.15 ? '' : 'fail-text'}>{f(r.gmFluid, 3)} m</strong></div>
       <dl>{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
       <div className="overall">
-        <span>IMO criteria</span>
+        <span>Stability criteria</span>
         <StatusBadge pass={r.overallPass} />
       </div>
+      <ul className="group-list">
+        {r.groups.map((g) => (
+          <li key={g.id}><span>{g.name.replace('IS Code 2008: ', 'IS 2008 ')}</span><StatusBadge pass={g.passed} /></li>
+        ))}
+        {r.groups.length === 0 && <li className="fail-text">No stability group selected</li>}
+      </ul>
       {r.warnings.length > 0 && (
         <ul className="warnings">{r.warnings.map((w, i) => <li key={i}>⚠ {w.message}</li>)}</ul>
       )}
@@ -68,13 +74,18 @@ export function Dashboard({ vessel, cases, active, r, onOpen, onDuplicate, onCre
           {r ? (
             <>
               <p><StatusBadge pass={r.overallPass} /> &nbsp;{passed} of {r.criteria.length} criteria passed</p>
+              <ul className="group-list">
+                {r.groups.map((g) => (
+                  <li key={g.id}><span>{g.name}</span><span className="muted">{g.criteria.filter((c) => c.passed).length}/{g.criteria.length}</span><StatusBadge pass={g.passed} /></li>
+                ))}
+              </ul>
               {lowest && <p className="muted">Lowest margin: {lowest.description} ({f(lowest.marginPct, 1)} %)</p>}
               {r.warnings.length > 0 && <p className="warn-text">⚠ {r.warnings.length} warning(s)</p>}
             </>
           ) : <p className="fail-text">Calculation error: see the results panel.</p>}
         </section>
       </div>
-      {r && <section className="panel"><div className="panel-head"><h2>GZ curve</h2></div><GzChart r={r} showWeather={false} /></section>}
+      {r && <section className="panel"><div className="panel-head"><h2>GZ curve</h2></div><GzChart r={r} mode="plain" /></section>}
       <section className="panel">
         <div className="panel-head"><h2>Load cases</h2><button onClick={onCreate}>+ New load case</button></div>
         <table className="grid">
@@ -98,24 +109,24 @@ export function Dashboard({ vessel, cases, active, r, onOpen, onDuplicate, onCre
 }
 
 export function Stability({ r }: { r: Results }) {
-  const w = r.weather;
   return (
     <div className="stack">
       <section className="panel">
         <div className="panel-head"><h2>GZ curve</h2>
-          <span className="legend"><i className="l-gz" />GZ <i className="l-gm" />GM tangent <i className="l-wind" />Wind levers <i className="l-flood" />Flooding angle <i className="l-a" />Area a <i className="l-b" />Area b</span>
+          <span className="legend"><i className="l-gz" />GZ <i className="l-gm" />GM tangent <i className="l-flood" />Flooding angle</span>
         </div>
-        <GzChart r={r} />
+        <GzChart r={r} mode="plain" />
         <p className="muted">
           GM fluid {f(r.gmFluid, 3)} m · GZmax {f(r.gzMax, 3)} m at {f(r.gzMaxAngle, 1)}° ·
           Angle of vanishing stability {r.avs !== null ? `${f(r.avs, 1)}°` : `> ${r.gzCurve[r.gzCurve.length - 1].heel}°`} ·
           Flooding angle {f(r.floodAngle, 1)}° {r.floodOpening ? `(${r.floodOpening}, approximate method)` : ''} ·
           Deck edge immersion {f(r.deckEdgeAngle, 1)}°
         </p>
+        <p className="muted">Each stability group has its own diagram with its criteria marked: see <strong>Criteria</strong>.</p>
       </section>
-      <div className="cards two">
-        <section className="panel">
-          <div className="panel-head"><h2>GZ table</h2></div>
+      <section className="panel">
+        <div className="panel-head"><h2>GZ table</h2></div>
+        <div className="table-wrap">
           <table className="grid">
             <thead><tr><th className="num">Heel °</th><th className="num">KN m</th><th className="num">KG·sin φ m</th><th className="num">TCG·cos φ m</th><th className="num">GZ m</th></tr></thead>
             <tbody>
@@ -124,38 +135,8 @@ export function Stability({ r }: { r: Results }) {
               ))}
             </tbody>
           </table>
-        </section>
-        {w && (
-          <section className="panel">
-            <div className="panel-head"><h2>Weather criterion details</h2></div>
-            <table className="grid">
-              <tbody>
-                {([
-                  ['Wind pressure P', `${w.P} N/m²`],
-                  ['Lateral windage area A', `${f(w.A, 1)} m²`],
-                  ['Centroid of A above base', `${f(w.hA, 3)} m`],
-                  ['Lever Z (to half draft)', `${f(w.Z, 3)} m`],
-                  ['Steady wind lever l_w1', `${f(w.lw1, 4)} m`],
-                  ['Gust wind lever l_w2', `${f(w.lw2, 4)} m`],
-                  ['B/d', f(w.Bd, 3)],
-                  ['Block coefficient C_B', f(w.Cb, 3)],
-                  ['X1 / X2 / k', `${f(w.X1, 3)} / ${f(w.X2, 3)} / ${f(w.k, 3)}`],
-                  ['OG / r', `${f(w.OG, 3)} m / ${f(w.r, 4)}`],
-                  ['C / Roll period T', `${f(w.C, 4)} / ${f(w.Troll, 2)} s`],
-                  ['s', f(w.s, 4)],
-                  ['θ0 steady wind heel', `${f(w.theta0, 2)}°`],
-                  ['θ1 roll angle', `${f(w.theta1, 2)}°`],
-                  ['Roll-back angle θ0 − θ1', `${f(w.thetaR, 2)}°`],
-                  ['θ2 = min(θf, 50°, θc)', `${f(w.theta2, 2)}°`],
-                  ['Area a', `${f(w.areaA, 4)} m·rad`],
-                  ['Area b', `${f(w.areaB, 4)} m·rad`],
-                  ['Ratio b / a', w.areaA > 0 ? f(w.areaB / w.areaA, 2) : '—'],
-                ] as [string, string][]).map(([k, v]) => <tr key={k}><td>{k}</td><td className="num">{v}</td></tr>)}
-              </tbody>
-            </table>
-          </section>
-        )}
-      </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -163,15 +144,16 @@ export function Stability({ r }: { r: Results }) {
 export function Criteria({ r }: { r: Results }) {
   return (
     <div className="stack">
-      <section className="panel">
-        <div className="panel-head"><h2>IMO IS Code 2008: intact stability criteria</h2><StatusBadge pass={r.overallPass} /></div>
-        <table className="grid">
-          <thead><tr><th>Ref</th><th>Criterion</th><th className="num">Required</th><th className="num">Actual</th><th className="num">Margin</th><th className="num">Margin %</th><th>Status</th></tr></thead>
-          <tbody>
-            {r.criteria.map((c) => <CritRow key={c.code} c={c} />)}
-          </tbody>
-        </table>
+      <section className="panel summary-strip">
+        <div><span className="muted">Overall result</span> <StatusBadge pass={r.overallPass} /></div>
+        {r.groups.map((g) => (
+          <a key={g.id} href={`#group-${g.id}`} className="chip">
+            {g.name} <StatusBadge pass={g.passed} />
+          </a>
+        ))}
+        {r.groups.length === 0 && <span className="fail-text">No stability group is selected for this load case. Select groups in the Load Case screen.</span>}
       </section>
+      {r.groups.map((g) => <GroupSection key={g.id} g={g} r={r} />)}
       {r.warnings.length > 0 && (
         <section className="panel">
           <div className="panel-head"><h2>Warnings</h2></div>
@@ -179,6 +161,73 @@ export function Criteria({ r }: { r: Results }) {
         </section>
       )}
     </div>
+  );
+}
+
+function GroupSection({ g, r }: { g: CriteriaGroupResult; r: Results }) {
+  const w = r.weather;
+  return (
+    <section className={`panel group ${g.passed ? 'g-pass' : 'g-fail'}`} id={`group-${g.id}`}>
+      <div className="panel-head">
+        <div>
+          <h3>{g.name}</h3>
+          <p className="muted small">{g.regulation} · {g.description}</p>
+        </div>
+        <div className="group-score">
+          <span className="muted">{g.criteria.filter((c) => c.passed).length} of {g.criteria.length} passed</span>
+          <StatusBadge pass={g.passed} />
+        </div>
+      </div>
+      {g.error && <div className="error-box">{g.error}</div>}
+      {!g.error && (
+        <>
+          <div className="legend">
+            {g.chart === 'GENERAL' ? (
+              <><i className="l-gz" />GZ <i className="l-1" />Area 0–30° <i className="l-2" />Area 30–40° (or θf) <i className="l-ref" />Criterion limits <i className="l-gm" />GM tangent <i className="l-flood" />Flooding angle</>
+            ) : (
+              <><i className="l-gz" />GZ <i className="l-wind" />Wind levers l_w1 / l_w2 <i className="l-a" />Area a <i className="l-b" />Area b <i className="l-ref" />θ0, θ0−θ1, θ2 <i className="l-flood" />Flooding angle</>
+            )}
+          </div>
+          <GzChart r={r} mode={g.chart === 'GENERAL' ? 'general' : 'weather'} />
+        </>
+      )}
+      <div className="table-wrap">
+        <table className="grid">
+          <thead><tr><th>Ref</th><th>Criterion</th><th className="num">Required</th><th className="num">Actual</th><th className="num">Margin</th><th className="num">Margin %</th><th>Status</th></tr></thead>
+          <tbody>{g.criteria.map((c) => <CritRow key={c.code} c={c} />)}</tbody>
+        </table>
+      </div>
+      {g.chart === 'WEATHER' && w && (
+        <details className="calc-details">
+          <summary>Weather criterion calculation details</summary>
+          <table className="grid">
+            <tbody>
+              {([
+                ['Wind pressure P', `${w.P} N/m²`],
+                ['Lateral windage area A', `${f(w.A, 1)} m²`],
+                ['Centroid of A above base', `${f(w.hA, 3)} m`],
+                ['Lever Z (to half draft)', `${f(w.Z, 3)} m`],
+                ['Steady wind lever l_w1 = P·A·Z / (1000·g·Δ)', `${f(w.lw1, 4)} m`],
+                ['Gust wind lever l_w2 = 1.5·l_w1', `${f(w.lw2, 4)} m`],
+                ['B/d', f(w.Bd, 3)],
+                ['Block coefficient C_B', f(w.Cb, 3)],
+                ['X1 / X2 / k', `${f(w.X1, 3)} / ${f(w.X2, 3)} / ${f(w.k, 3)}`],
+                ['OG / r = 0.73 + 0.6·OG/d', `${f(w.OG, 3)} m / ${f(w.r, 4)}`],
+                ['C / Roll period T = 2·C·B/√GM', `${f(w.C, 4)} / ${f(w.Troll, 2)} s`],
+                ['s', f(w.s, 4)],
+                ['θ0 steady wind heel', `${f(w.theta0, 2)}°`],
+                ['θ1 = 109·k·X1·X2·√(r·s)', `${f(w.theta1, 2)}°`],
+                ['Roll-back angle θ0 − θ1', `${f(w.thetaR, 2)}°`],
+                ['θ2 = min(θf, 50°, θc)', `${f(w.theta2, 2)}°`],
+                ['Area a', `${f(w.areaA, 4)} m·rad`],
+                ['Area b', `${f(w.areaB, 4)} m·rad`],
+                ['Ratio b / a', w.areaA > 0 ? f(w.areaB / w.areaA, 2) : '—'],
+              ] as [string, string][]).map(([k, v]) => <tr key={k}><td>{k}</td><td className="num">{v}</td></tr>)}
+            </tbody>
+          </table>
+        </details>
+      )}
+    </section>
   );
 }
 

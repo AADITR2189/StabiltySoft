@@ -127,6 +127,8 @@ export interface LoadCase {
   tanks: Record<string, TankStatus>;
   weights: WeightItem[];
   gzMaxAngle?: number; // default 90
+  /** Stability criteria groups applied to this load case (ids). Undefined = all built-in groups. */
+  criteriaGroups?: string[];
 }
 
 // ---------- Results ----------
@@ -172,6 +174,20 @@ export interface CriterionResult {
   explanation?: string;
 }
 
+export type GroupChart = 'GENERAL' | 'WEATHER';
+
+export interface CriteriaGroupResult {
+  id: string;
+  name: string;
+  regulation: string;
+  description: string;
+  chart: GroupChart;
+  criteria: CriterionResult[];
+  passed: boolean;
+  /** Set when the group could not be evaluated (the group then fails). */
+  error?: string;
+}
+
 export interface WeatherDetail {
   P: number; A: number; Z: number; hA: number;
   lw1: number; lw2: number;
@@ -214,7 +230,8 @@ export interface Results {
   gzCurve: { heel: number; gz: number }[];
   tanks: TankResult[];
   summary: { group: string; weight: number; lcg: number; tcg: number; vcg: number }[];
-  criteria: CriterionResult[];
+  criteria: CriterionResult[];        // all evaluated criteria (flat)
+  groups: CriteriaGroupResult[];      // applied stability groups, each with its criteria
   weather: WeatherDetail | null;
   warnings: Warning[];
   overallPass: boolean;

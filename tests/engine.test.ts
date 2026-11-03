@@ -223,3 +223,36 @@ describe('physical properties (§A.13.4)', () => {
     expect(JSON.stringify(calculate(demoVessel, demoLoadCase))).toBe(JSON.stringify(calculate(demoVessel, demoLoadCase)));
   });
 });
+
+describe('stability groups', () => {
+  it('evaluates both built-in groups by default, each with its own criteria', () => {
+    const r = calculate(demoVessel, demoLoadCase);
+    expect(r.groups.map((g) => g.id)).toEqual(['IS2008_GENERAL', 'IS2008_WEATHER']);
+    expect(r.groups[0].criteria.map((c) => c.code)).toEqual(['IS-2.2.1.1', 'IS-2.2.1.2', 'IS-2.2.1.3', 'IS-2.2.2', 'IS-2.2.3', 'IS-2.2.4']);
+    expect(r.groups[1].criteria.map((c) => c.code)).toEqual(['IS-2.3-HEEL', 'IS-2.3-AREA']);
+    expect(r.groups.every((g) => g.passed)).toBe(true);
+    expect(r.overallPass).toBe(true);
+  });
+  it('only the selected groups are evaluated and count towards the overall result', () => {
+    const lc = { ...clone(demoLoadCase), criteriaGroups: ['IS2008_GENERAL'] };
+    const r = calculate(demoVessel, lc);
+    expect(r.groups.map((g) => g.id)).toEqual(['IS2008_GENERAL']);
+    expect(r.weather).toBeNull();
+    expect(r.criteria.every((c) => c.code.startsWith('IS-2.2'))).toBe(true);
+  });
+  it('no group selected means no compliance (never a silent pass)', () => {
+    const r = calculate(demoVessel, { ...clone(demoLoadCase), criteriaGroups: [] });
+    expect(r.groups).toHaveLength(0);
+    expect(r.overallPass).toBe(false);
+  });
+  it('a group that cannot be evaluated fails with a reason', () => {
+    const v = clone(demoVessel);
+    v.windage = v.windage.filter((w) => w.draft >= 6); // windage table no longer covers the draft
+    const r = calculate(v, demoLoadCase);
+    const weather = r.groups.find((g) => g.id === 'IS2008_WEATHER')!;
+    expect(weather.passed).toBe(false);
+    expect(weather.error).toMatch(/could not be evaluated/);
+    expect(r.overallPass).toBe(false);
+    expect(r.groups.find((g) => g.id === 'IS2008_GENERAL')!.passed).toBe(true);
+  });
+});

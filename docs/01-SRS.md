@@ -307,6 +307,9 @@ Online help (context-sensitive), a User Manual (PDF), a Data Preparation Guide (
 | CRIT-006 | Operational checks (draft, trim, heel limits) are shown separately as "Operational limits". | M |
 | CRIT-007 | User-defined criteria: users with the Naval Architect role can clone a criteria set and adjust parameters, or compose new criteria from engine primitives (area between angles, GZ at angle, angle of max GZ, GM, heel under moment). These are clearly labelled "Non-statutory". | F (data model M) |
 | CRIT-008 | Criteria-set versions are immutable once used in a calculation run. | M |
+| CRIT-009 | Criteria are organised in **stability groups** (e.g. *IS Code 2008: General*, *IS Code 2008: Weather Criterion*; later Grain, Passenger, Towing, user-defined). Each group contains several criteria and has its own PASS/FAIL (PASS only if all its criteria pass). | M |
+| CRIT-010 | Each stability group has its **own diagram** showing exactly what its criteria measure. General: GZ curve with 0–30° and 30–40°/θf areas, GZ 0.20 m line, 25° line, GM tangent, θf. Weather: GZ curve over negative and positive angles with l_w1/l_w2, θ₀, θ₀−θ₁, θ₂, areas a and b. | M |
+| CRIT-011 | Groups are selected per load case. The overall result is PASS only if at least one group is selected and every selected group passes. A group that cannot be evaluated (e.g. missing windage data) fails and states the reason. | M |
 
 #### 3.2.12 Import Module (IMP)
 | ID | Requirement | Pri |

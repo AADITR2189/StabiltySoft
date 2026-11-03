@@ -4,8 +4,9 @@ import {
 } from './math';
 import { resolveTank } from './tanks';
 import type {
-  CriterionResult, GzPoint, LoadCase, Results, TankResult, Vessel, Warning, WeatherDetail,
+  CriteriaGroupResult, CriterionResult, GzPoint, LoadCase, Results, TankResult, Vessel, Warning, WeatherDetail,
 } from './types';
+import { CRITERIA_GROUPS, DEFAULT_GROUP_IDS } from './criteriaGroups';
 
 export const ENGINE_VERSION = '0.1.0';
 const G = 9.81;
@@ -158,7 +159,10 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
   }
   const deckEdgeAngle = Math.atan(Math.max(0, vessel.depth - draftMS) / (vessel.breadth / 2)) / DEG;
 
-  // ---------- §A.8 IS Code 2008 Part A §2.2 ----------
+  // ---------- Stability groups selected for this load case ----------
+  const selected = new Set(lc.criteriaGroups ?? DEFAULT_GROUP_IDS);
+
+  // ---------- §A.8 Group IS2008_GENERAL (IS Code 2008 Part A §2.2) ----------
   const criteria: CriterionResult[] = [];
   const area = (a: number, b: number) => integrateDeg(gz, a, b);
   const lim40 = Math.min(40, floodAngle);
@@ -174,13 +178,18 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
   criteria.push(ge('IS-2.2.3', 'Angle of maximum GZ', 'IS Code 2008 A 2.2.3', '°', 25, gzMaxAngle));
   criteria.push(ge('IS-2.2.4', 'Initial metacentric height GM₀', 'IS Code 2008 A 2.2.4', 'm', 0.15, gmFluid));
 
-  // ---------- §A.9 Weather criterion ----------
+  // ---------- §A.9 Group IS2008_WEATHER (IS Code 2008 Part A §2.3) ----------
   let weather: WeatherDetail | null = null;
-  try {
-    weather = weatherCriterion();
-  } catch (e) {
-    if (e instanceof EngineError) warnings.push({ code: e.code, message: `Weather criterion: ${e.message}` });
-    else throw e;
+  let weatherError: string | undefined;
+  if (selected.has('IS2008_WEATHER')) {
+    try {
+      weather = weatherCriterion();
+    } catch (e) {
+      if (e instanceof EngineError) {
+        weatherError = `The weather criterion could not be evaluated: ${e.message}`;
+        warnings.push({ code: e.code, message: weatherError });
+      } else throw e;
+    }
   }
 
   function weatherCriterion(): WeatherDetail {
@@ -270,7 +279,23 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
     return s;
   }
 
-  const overallPass = criteria.every((c) => c.passed) && !warnings.some((w) => w.code === 'NEGATIVE_INITIAL_GM');
+  // ---------- Group results ----------
+  const groupCodes: Record<string, string[]> = {
+    IS2008_GENERAL: ['IS-2.2.1.1', 'IS-2.2.1.2', 'IS-2.2.1.3', 'IS-2.2.2', 'IS-2.2.3', 'IS-2.2.4'],
+    IS2008_WEATHER: ['IS-2.3-HEEL', 'IS-2.3-AREA'],
+  };
+  const groups: CriteriaGroupResult[] = CRITERIA_GROUPS.filter((g) => selected.has(g.id)).map((g) => {
+    const list = criteria.filter((c) => groupCodes[g.id]?.includes(c.code));
+    const error = g.id === 'IS2008_WEATHER' ? weatherError : undefined;
+    return {
+      id: g.id, name: g.name, regulation: g.regulation, description: g.description, chart: g.chart,
+      criteria: list,
+      error,
+      passed: !error && list.length > 0 && list.every((c) => c.passed),
+    };
+  });
+  const appliedCriteria = groups.flatMap((g) => g.criteria);
+  const overallPass = groups.length > 0 && groups.every((g) => g.passed) && !warnings.some((w) => w.code === 'NEGATIVE_INITIAL_GM');
 
   return {
     displacement: disp,
@@ -280,7 +305,7 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
     lcb, lcf, kmt, mtc, tpc, gmSolid, gmFluid,
     floodAngle, floodOpening, deckEdgeAngle,
     gzMax, gzMaxAngle, avs,
-    gzTable, gzCurve, tanks, summary, criteria, weather, warnings, overallPass,
+    gzTable, gzCurve, tanks, summary, criteria: appliedCriteria, groups, weather, warnings, overallPass,
   };
 }
 

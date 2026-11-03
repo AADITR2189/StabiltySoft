@@ -1,5 +1,6 @@
 import type { LoadCase, Results, TankInput, Vessel, WeightItem } from '../engine/types';
 import { newId } from '../store';
+import { CRITERIA_GROUPS, DEFAULT_GROUP_IDS } from '../engine/criteriaGroups';
 import { f } from './format';
 
 const MODES: { value: TankInput['mode']; label: string; unit: string }[] = [
@@ -74,6 +75,24 @@ export function LoadCaseEditor({ vessel, lc, r, onChange }: Props) {
             </select>
           </label>
         </div>
+        <fieldset className="group-select">
+          <legend>Stability groups to check</legend>
+          {CRITERIA_GROUPS.map((g) => {
+            const sel = lc.criteriaGroups ?? DEFAULT_GROUP_IDS;
+            const on = sel.includes(g.id);
+            return (
+              <label key={g.id} className="check">
+                <input
+                  type="checkbox"
+                  id={`grp-${g.id}`}
+                  checked={on}
+                  onChange={() => set({ criteriaGroups: on ? sel.filter((x) => x !== g.id) : [...sel, g.id] })}
+                />
+                <span><strong>{g.name}</strong><br /><span className="muted small">{g.regulation}</span></span>
+              </label>
+            );
+          })}
+        </fieldset>
       </section>
 
       <section className="panel">
