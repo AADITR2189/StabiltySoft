@@ -65,6 +65,9 @@ The current Excel-based stability assessments cause:
 | Real vessel data | ⏳ Waiting for data: see the [Vessel Data Checklist](docs/DATA-CHECKLIST.md) |
 | Import (Excel / CSV / PDF / Word) with verification | ⏳ Next |
 | Reports (PDF / Excel) | ✅ Reports screen: PDF (summary, particulars, condition, weights, tanks, criteria, one page per stability group with GZ curve, GZ table and moment calculations, trace) and Excel workbook (same numbers, one GZ sheet per group, all load cases). Report ID = SHA-256 of inputs and results |
+| Database file | ✅ Save the whole database (your vessels with their data record, all load cases, criteria library) to one JSON file sealed with SHA-256; import it back with preview, checksum check, merge or replace |
+| Data import | ✅ PDF (text layer), Excel .xlsx, CSV, Word .docx, or pasted / typed tables → hydrostatics (per trim), KN cross curves (per trim), tank calibration, windage, down-flooding openings, load case weights. Column auto-mapping, a/f and s/p letters, midship → AP conversion. Every cell shows its source text and is re-read digit by digit; engineering checks (monotonic, TPC balance, % and weight vs volume, single-value spikes); row-by-row human sign-off; stored data read back and compared value by value |
+| Your vessels | ✅ New vessel (particulars + lightship form) or "copy as mine" of a built-in vessel; data status becomes Verified only when every data set has a verified import record |
 | Hydrostatics / tanks editors, compare load cases, settings | ⏳ Planned |
 
 ### For developers: running it

@@ -1,5 +1,6 @@
 // Vessel registry. Each vessel carries its data status: demo, or extracted-but-unverified booklet data.
 import type { LoadCase, Vessel } from '../engine/types';
+import type { Provenance } from '../importer/apply';
 import { demoLoadCase, demoVessel } from './demoVessel';
 import { vesselFromBooklet, type BookletExtract } from './fromBooklet';
 import marsolExtract from '../../vessels/marsol-splendor/marsol-splendor.extracted.json';
@@ -12,6 +13,10 @@ export interface VesselEntry {
   status: DataStatus;
   source: string;
   defaultLoadCases: LoadCase[];
+  /** true for vessels created or imported by the user (stored in the browser, editable) */
+  user?: boolean;
+  /** user vessels: where each dataset came from and who verified it */
+  provenance?: Record<string, Provenance>;
 }
 
 interface ExtractCondition {

@@ -265,6 +265,10 @@ export function VesselData({ vessel, status, source }: { vessel: Vessel; status:
     <div className="stack">
       {status === 'DEMO' ? (
         <div className="notice">This is the <strong>demo vessel</strong> (a box-shaped barge with exactly calculable data).</div>
+      ) : status === 'VERIFIED' ? (
+        <div className="notice ok-notice"><strong>All data sets imported and verified.</strong> Source: {source}. See the data record above for who verified what and from which file.</div>
+      ) : source.startsWith('Created') || source.startsWith('Copy') ? (
+        <div className="notice warn-notice"><strong>Your vessel: not all data sets are verified yet.</strong> Source: {source}. The list above shows what is still to import and verify.</div>
       ) : (
         <div className="notice warn-notice">
           <strong>Data extracted from the booklet, not yet verified.</strong> Source: {source}. All values must be checked against the booklet pages before this vessel is used for real decisions.

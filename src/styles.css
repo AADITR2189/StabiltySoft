@@ -289,3 +289,36 @@ button.tiny { font-size: 12px; padding: 1px 8px; margin: 2px 4px 2px 0; }
 
 .wind-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 6px; }
 .wind-ctl label { font-weight: 600; color: var(--powder); }
+
+/* ---------- Data Import / Vessel Database ---------- */
+.ok-notice { border-color: var(--pass); }
+.pass-text { color: var(--pass); }
+.import textarea, .panel textarea { width: 100%; font: 13px/1.4 'JetBrains Mono', ui-monospace, monospace; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 6px; }
+.import-source { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.import-source .source-grid { flex: 1 1 520px; min-width: 0; }
+.table-wrap.tall { max-height: 520px; }
+.source-grid select { font-size: 12px; max-width: 170px; padding: 2px 4px; }
+.source-grid tr.out-range td { color: var(--muted); opacity: 0.55; }
+.source-grid tr.in-range td.mapped { background: color-mix(in srgb, var(--powder) 12%, transparent); }
+.source-grid td { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12px; }
+.pdf-page { flex: 0 0 auto; max-width: 100%; }
+.pdf-page canvas { display: block; max-width: 100%; height: auto; border: 1px solid var(--border); background: #fff; margin-top: 4px; }
+.checks { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.checks li { display: flex; gap: 8px; align-items: baseline; }
+.checks .mark { width: 18px; text-align: center; font-weight: 800; }
+.checks li.ok .mark { color: var(--pass); }
+.checks li.warn .mark { color: var(--warn); }
+.checks li.error .mark, .checks li.error b { color: var(--fail); }
+.grid.review td { cursor: text; vertical-align: top; }
+.grid.review td .src { font-size: 11px; color: var(--muted); font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.grid.review td .left { text-align: left; }
+.grid.review td.cell-error { background: color-mix(in srgb, var(--fail) 18%, transparent); color: var(--fail); }
+.grid.review td.cell-edited { background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.grid.review tr.row-flag td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.confirm { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+.grid td.wrap { white-space: normal; }
+.ghost-file { position: relative; display: inline-flex; }
+.ghost-file input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.file-btn { display: inline-block; padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; font-weight: 600; cursor: pointer; }
+.ghost-file:focus-within .file-btn { outline: 2px solid var(--accent); }
+.db-preview { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }

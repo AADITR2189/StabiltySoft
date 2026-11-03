@@ -1,13 +1,53 @@
 // Local persistence of load cases per vessel (browser storage). Works offline.
 // Phase 1 MVP: localStorage. Planned: IndexedDB + sync (see docs/03-System-Architecture.md §10).
 import { useEffect, useState } from 'react';
-import { VESSELS } from './data/vessels';
+import { VESSELS, type VesselEntry } from './data/vessels';
+import type { UserVesselEntry } from './importer/dbFile';
 import type { CriteriaLibrary, CriterionDef, GroupDef, LoadCase, MomentDef, Vessel } from './engine/types';
 
 const KEY = 'stabilitysoft.loadcases.v3';
 const ACTIVE = 'stabilitysoft.active.v3';
 
 type Saved = Record<string, LoadCase[]>; // vesselId -> load cases
+
+// ---------------- user vessels ----------------
+const VKEY = 'stabilitysoft.uservessels.v1';
+
+/** Datasets a vessel needs before its data can count as verified. */
+export function requiredDatasets(v: Vessel): string[] {
+  return ['PARTICULARS', 'HYDRO', 'KN', 'WINDAGE', 'OPENINGS', ...v.tanks.map((t) => `TANK ${t.name}`)];
+}
+
+export function missingVerification(u: UserVesselEntry): string[] {
+  const have = Object.keys(u.provenance);
+  return requiredDatasets(u.vessel).filter((k) => (k === 'HYDRO' || k === 'KN' ? !have.some((h) => h.startsWith(`${k} trim`)) : !have.includes(k)));
+}
+
+export function toEntry(u: UserVesselEntry): VesselEntry {
+  return {
+    id: u.id, vessel: u.vessel, user: true, provenance: u.provenance, source: u.source,
+    status: missingVerification(u).length ? 'UNVERIFIED' : 'VERIFIED',
+    defaultLoadCases: [{ ...emptyLoadCase(u.vessel, 1), id: `${u.id}-lc1` }],
+  };
+}
+
+export function useUserVessels() {
+  const [list, setList] = useState<UserVesselEntry[]>(() => {
+    try { const x = JSON.parse(localStorage.getItem(VKEY) ?? '[]'); return Array.isArray(x) ? x : []; } catch { return []; }
+  });
+  const [saveError, setSaveError] = useState<string | null>(null);
+  useEffect(() => {
+    try { localStorage.setItem(VKEY, JSON.stringify(list)); setSaveError(null); }
+    catch { setSaveError('Browser storage is full: the latest vessel changes are not saved. Save the database to a file now.'); }
+  }, [list]);
+  return {
+    list,
+    saveError,
+    save: (u: UserVesselEntry) => setList((l) => (l.some((x) => x.id === u.id) ? l.map((x) => (x.id === u.id ? u : x)) : [...l, u])),
+    remove: (id: string) => setList((l) => l.filter((x) => x.id !== id)),
+    replaceAll: (l: UserVesselEntry[]) => setList(l),
+  };
+}
 
 function load(): Saved {
   let saved: Saved = {};
@@ -25,12 +65,12 @@ export function newId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-export function useLoadCases() {
+export function useLoadCases(entries: VesselEntry[] = VESSELS) {
   const [all, setAll] = useState<Saved>(load);
   const [active, setActiveState] = useState<{ vesselId: string; caseId: string }>(() => {
     try {
       const a = JSON.parse(localStorage.getItem(ACTIVE) ?? 'null');
-      if (a && VESSELS.some((v) => v.id === a.vesselId)) return a;
+      if (a && typeof a.vesselId === 'string') return a;
     } catch { /* ignore */ }
     return { vesselId: VESSELS[0].id, caseId: '' };
   });
@@ -38,12 +78,20 @@ export function useLoadCases() {
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(all)); } catch { /* ignore */ } }, [all]);
   useEffect(() => { try { localStorage.setItem(ACTIVE, JSON.stringify(active)); } catch { /* ignore */ } }, [active]);
 
-  const entry = VESSELS.find((v) => v.id === active.vesselId) ?? VESSELS[0];
-  const cases = all[entry.id] ?? [];
+  const entry = entries.find((v) => v.id === active.vesselId) ?? entries[0];
+  const cases = all[entry.id]?.length ? all[entry.id] : entry.defaultLoadCases;
   const lc = cases.find((c) => c.id === active.caseId) ?? cases[0];
-  const setCases = (fn: (cs: LoadCase[]) => LoadCase[]) => setAll((a) => ({ ...a, [entry.id]: fn(a[entry.id] ?? []) }));
+  const setCases = (fn: (cs: LoadCase[]) => LoadCase[]) => setAll((a) => ({ ...a, [entry.id]: fn(a[entry.id]?.length ? a[entry.id] : entry.defaultLoadCases) }));
 
   return {
+    all,
+    replaceAll: (x: Saved) => setAll(() => {
+      const next = { ...x };
+      for (const v of VESSELS) if (!Array.isArray(next[v.id]) || !next[v.id].length) next[v.id] = structuredClone(v.defaultLoadCases);
+      return next;
+    }),
+    setCasesFor: (vesselId: string, cs: LoadCase[]) => setAll((a) => ({ ...a, [vesselId]: cs })),
+    removeVesselCases: (vesselId: string) => setAll((a) => { const n = { ...a }; delete n[vesselId]; return n; }),
     entry,
     cases,
     active: lc,
@@ -109,6 +157,7 @@ export function useLibrary() {
       const ms = l.moments ?? [];
       return { ...l, moments: ms.some((x) => x.id === m.id) ? ms.map((x) => (x.id === m.id ? m : x)) : [...ms, m] };
     }),
+    replace: (l: CriteriaLibrary) => setLib(l),
     removeMoment: (id: string) => setLib((l) => ({ ...l, moments: (l.moments ?? []).filter((m) => m.id !== id) })),
   };
 }
