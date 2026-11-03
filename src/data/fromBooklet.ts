@@ -59,6 +59,11 @@ export function vesselFromBooklet(x: BookletExtract): Vessel {
     openings,
     maxDraft: p.summerDraft,
     draftOriginX: p.midshipFromAP,
-    criteriaGroups: ['OSV_INTACT', 'IS2008_WEATHER'],
+    // Fire-fighting (booklet p.27/46): 2 monitors × 1.530 t at 19.600 m; bow thruster 18 t at 1.200 m above base.
+    fifi: { monitorForce: 1.53, monitorCount: 2, monitorHeight: 19.6, thrusterForce: 18, thrusterHeight: 1.2, maxHeel: 5 },
+    // Crane (booklet p.7, 51): design heel 5°, wind 20 kn during lifting. The wind coefficient 1.12 is the
+    // area-and-lever weighted mean of the booklet's shape (Cs) and height (Ch) coefficients on p.51 (derived).
+    crane: { maxHeel: 5, windSpeedKnots: 20, airDensity: 1.22, windCoefficient: 1.12 },
+    criteriaGroups: ['OSV_INTACT', 'IS2008_WEATHER', 'BV_FIFI'],
   };
 }

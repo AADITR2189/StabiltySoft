@@ -222,3 +222,29 @@ select.ctx-vessel { font-weight: 600; }
 .g-MISC { background: var(--text); }
 .sidenav button.active .icon { color: var(--accent); }
 .panel h2 { color: var(--powder); }
+
+/* dashboard, library */
+.particulars { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 6px 24px; margin: 0; }
+.particulars div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--border); padding: 4px 0; }
+.particulars dt { color: var(--muted); }
+.particulars dd { margin: 0; text-align: right; }
+.grid td.wrap, .grid th.wrap { white-space: normal; min-width: 120px; }
+button.link { background: none; color: var(--text); padding: 0; font-weight: 600; text-align: left; text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; }
+button.danger { background: var(--fail); color: var(--on-accent); }
+.confirm { display: inline-flex; gap: 6px; }
+.chip-static { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.chip-static.own { color: var(--accent-text); border-color: var(--accent); }
+.form-row .check.inline { flex-direction: row; align-items: center; color: var(--text); font-size: 13px; }
+.form-actions { display: flex; align-items: flex-end; }
+.ok-text { color: var(--pass); }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin: 8px 0 12px; }
+.pick { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); padding: 8px 10px 8px 34px; font-weight: 400; }
+.pick:hover { border-color: var(--powder); }
+.pick.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
+.pick-n { position: absolute; left: 8px; top: 8px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.group-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.group-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; background: var(--surface-2); }
+.crit-list { margin: 6px 0 0; padding-left: 20px; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+.chart .area-3 { fill: rgba(255, 210, 63, 0.22); }
+.chart .area-4 { fill: rgba(74, 222, 128, 0.20); }
+.grid.summary td:first-child { min-width: 240px; white-space: normal; }

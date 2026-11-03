@@ -1,6 +1,7 @@
 import type { CriteriaGroupResult, CriterionResult, LoadCase, Results, Vessel } from '../engine/types';
 import { f, unitFmt } from './format';
 import { GzChart } from './GzChart';
+import { ConfirmDelete } from './CriteriaLibrary';
 
 export function StatusBadge({ pass }: { pass: boolean }) {
   return <span className={`badge ${pass ? 'pass' : 'fail'}`}>{pass ? '✔ PASS' : '✖ FAIL'}</span>;
@@ -43,66 +44,80 @@ export function ResultsSidebar({ r, error }: { r: Results | null; error: string 
   );
 }
 
-export function Dashboard({ vessel, cases, active, r, onOpen, onDuplicate, onCreate, onRemove }: {
-  vessel: Vessel; cases: LoadCase[]; active: LoadCase; r: Results | null;
+export function Dashboard({ vessel, status, source, cases, activeId, calc, onOpen, onDuplicate, onCreate, onRemove }: {
+  vessel: Vessel; status: string; source: string; cases: LoadCase[]; activeId: string;
+  calc: (lc: LoadCase) => { r: Results | null; error: string | null };
   onOpen: (id: string) => void; onDuplicate: (id: string) => void; onCreate: () => void; onRemove: (id: string) => void;
 }) {
-  const passed = r?.criteria.filter((c) => c.passed).length ?? 0;
-  const lowest = r ? [...r.criteria].sort((a, b) => a.marginPct - b.marginPct)[0] : null;
+  const rows = cases.map((c) => ({ c, ...calc(c) }));
+  const groupIds = Array.from(new Set(rows.flatMap((x) => x.r?.groups.map((g) => g.id) ?? [])));
+  const groupName = (id: string) => rows.flatMap((x) => x.r?.groups ?? []).find((g) => g.id === id)?.name ?? id;
+  const ls = vessel.lightship;
+  const particulars: [string, string][] = [
+    ['Ship name', vessel.name], ['IMO number', vessel.imo], ['Call sign', vessel.callSign],
+    ['Length BP', `${f(vessel.lbp, 2)} m`], ['Breadth (moulded)', `${f(vessel.breadth, 2)} m`], ['Depth (moulded)', `${f(vessel.depth, 2)} m`],
+    ['Load line draft', vessel.maxDraft ? `${f(vessel.maxDraft, 3)} m` : '—'], ['Water density (tables)', `${f(vessel.rhoRef, 3)} t/m³`],
+    ['Lightship weight', `${f(ls.weight, 2)} t`],
+    ['Lightship LCG', `${f(Math.abs(ls.lcg - vessel.lbp / 2), 3)} m ${ls.lcg - vessel.lbp / 2 < 0 ? 'aft of' : 'fwd of'} midship`],
+    ['Lightship TCG', `${f(Math.abs(ls.tcg), 3)} m ${ls.tcg < 0 ? 'port' : ls.tcg > 0 ? 'starboard' : ''}`],
+    ['Lightship VCG', `${f(ls.vcg, 3)} m above base`],
+  ];
   return (
     <div className="stack">
-      <div className="cards">
-        <section className="panel">
-          <div className="panel-head"><h2>Vessel</h2></div>
-          <p className="big">{vessel.name}</p>
-          <p className="muted">IMO {vessel.imo} · Call sign {vessel.callSign}</p>
-          <p className="muted">LBP {f(vessel.lbp, 2)} m · B {f(vessel.breadth, 2)} m · D {f(vessel.depth, 2)} m</p>
-        </section>
-        <section className="panel">
-          <div className="panel-head"><h2>Active load case</h2></div>
-          <p className="big">{active.name}</p>
-          {r && (
-            <div className="kpis">
-              <div><span>Δ</span><strong>{f(r.displacement, 0)} t</strong></div>
-              <div><span>GM fluid</span><strong>{f(r.gmFluid, 3)} m</strong></div>
-              <div><span>Trim</span><strong>{f(Math.abs(r.trim), 2)} m {r.trim >= 0 ? 'A' : 'F'}</strong></div>
-            </div>
-          )}
-        </section>
-        <section className="panel">
-          <div className="panel-head"><h2>Compliance</h2></div>
-          {r ? (
-            <>
-              <p><StatusBadge pass={r.overallPass} /> &nbsp;{passed} of {r.criteria.length} criteria passed</p>
-              <ul className="group-list">
-                {r.groups.map((g) => (
-                  <li key={g.id}><span>{g.name}</span><span className="muted">{g.criteria.filter((c) => c.passed).length}/{g.criteria.length}</span><StatusBadge pass={g.passed} /></li>
-                ))}
-              </ul>
-              {lowest && <p className="muted">Lowest margin: {lowest.description} ({f(lowest.marginPct, 1)} %)</p>}
-              {r.warnings.length > 0 && <p className="warn-text">⚠ {r.warnings.length} warning(s)</p>}
-            </>
-          ) : <p className="fail-text">Calculation error: see the results panel.</p>}
-        </section>
-      </div>
-      {r && <section className="panel"><div className="panel-head"><h2>GZ curve</h2></div><GzChart r={r} mode="plain" /></section>}
       <section className="panel">
-        <div className="panel-head"><h2>Load cases</h2><button onClick={onCreate}>+ New load case</button></div>
-        <table className="grid">
-          <thead><tr><th>Name</th><th>Type</th><th className="num">Sea density</th><th /></tr></thead>
-          <tbody>
-            {cases.map((c) => (
-              <tr key={c.id} className={c.id === active.id ? 'selected' : ''}>
-                <td>{c.name}</td><td>{c.type}</td><td className="num">{f(c.seaDensity, 3)}</td>
-                <td className="actions">
-                  <button className="ghost" onClick={() => onOpen(c.id)}>Open</button>
-                  <button className="ghost" onClick={() => onDuplicate(c.id)}>Duplicate</button>
-                  <button className="ghost" disabled={cases.length === 1} onClick={() => { if (confirm(`Delete "${c.name}"?`)) onRemove(c.id); }}>Delete</button>
-                </td>
+        <div className="panel-head">
+          <h2>General particulars</h2>
+          <span className={`data-badge ${status.toLowerCase()}`}>{status === 'UNVERIFIED' ? 'Data not verified' : status === 'DEMO' ? 'Demo data' : 'Verified'}</span>
+        </div>
+        <dl className="particulars">
+          {particulars.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+        </dl>
+        <p className="muted small">Source: {source}</p>
+      </section>
+      <section className="panel">
+        <div className="panel-head"><h2>Load cases summary ({cases.length})</h2><button onClick={onCreate}>+ Add load case</button></div>
+        <div className="table-wrap">
+          <table className="grid summary">
+            <thead>
+              <tr>
+                <th>Load case</th><th>Type</th><th className="num">Displ. t</th><th className="num">Draft AP m</th><th className="num">Draft FP m</th>
+                <th className="num">Trim m</th><th className="num">Heel °</th><th className="num">GM fluid m</th>
+                {groupIds.map((id) => <th key={id} className="wrap">{groupName(id)}</th>)}
+                <th>Result</th><th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map(({ c, r, error }) => (
+                <tr key={c.id} className={c.id === activeId ? 'selected' : ''}>
+                  <td className="wrap"><button className="link" onClick={() => onOpen(c.id)}>{c.name}</button></td>
+                  <td>{c.type}</td>
+                  {r ? (
+                    <>
+                      <td className="num">{f(r.displacement, 1)}</td>
+                      <td className="num">{f(r.draftAP, 3)}</td>
+                      <td className="num">{f(r.draftFP, 3)}</td>
+                      <td className="num">{f(Math.abs(r.trim), 3)} {r.trim >= 0 ? 'A' : 'F'}</td>
+                      <td className="num">{f(Math.abs(r.heel), 2)} {r.heel > 0.005 ? 'S' : r.heel < -0.005 ? 'P' : ''}</td>
+                      <td className="num">{f(r.gmFluid, 3)}</td>
+                      {groupIds.map((id) => {
+                        const g = r.groups.find((x) => x.id === id);
+                        return <td key={id}>{g ? <StatusBadge pass={g.passed} /> : <span className="muted">not checked</span>}</td>;
+                      })}
+                      <td><StatusBadge pass={r.overallPass} /></td>
+                    </>
+                  ) : (
+                    <td colSpan={7 + groupIds.length} className="fail-text wrap">Cannot calculate: {error}</td>
+                  )}
+                  <td className="actions">
+                    <button className="ghost" onClick={() => onOpen(c.id)}>Open</button>
+                    <button className="ghost" onClick={() => onDuplicate(c.id)}>Duplicate</button>
+                    {cases.length > 1 && <ConfirmDelete label={`Delete ${c.name}`} onConfirm={() => onRemove(c.id)} />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );
@@ -168,13 +183,14 @@ function GroupSection({ g, r }: { g: CriteriaGroupResult; r: Results }) {
       {!g.error && (
         <>
           <div className="legend">
-            {g.chart === 'GENERAL' ? (
-              <><i className="l-gz" />GZ <i className="l-1" />Area 0–30° <i className="l-2" />Area 30–40° (or θf) <i className="l-ref" />Criterion limits <i className="l-gm" />GM tangent <i className="l-flood" />Flooding angle</>
-            ) : (
-              <><i className="l-gz" />GZ <i className="l-wind" />Wind levers l_w1 / l_w2 <i className="l-a" />Area a <i className="l-b" />Area b <i className="l-ref" />θ0, θ0−θ1, θ2 <i className="l-flood" />Flooding angle</>
-            )}
+            <i className="l-gz" />GZ{r.side < 0 ? ' (heel to port)' : ''}
+            {g.chart === 'GENERAL' && <><i className="l-1" /><i className="l-2" />Areas of this group <i className="l-ref" />Criterion limits <i className="l-gm" />GM tangent</>}
+            {g.chart === 'WEATHER' && <><i className="l-wind" />Wind levers l_w1 / l_w2 <i className="l-a" />Area a <i className="l-b" />Area b <i className="l-ref" />θ0, θ0−θ1, θ2</>}
+            {g.chart === 'FIFI' && <><i className="l-wind" />Heeling arm (monitors + thruster) <i className="l-ref" />Equilibrium</>}
+            {g.chart === 'CRANE' && <><i className="l-wind" />Wind lever during lift <i className="l-2" />Residual area to 20° <i className="l-b" />ARL (to φ2) <i className="l-ref" />φ1, φ2, deck edge</>}
+            <i className="l-flood" />Flooding angle
           </div>
-          <GzChart r={r} mode={g.chart === 'GENERAL' ? 'general' : 'weather'} />
+          <GzChart r={r} mode={g.chart === 'GENERAL' ? 'general' : g.chart === 'WEATHER' ? 'weather' : g.chart === 'FIFI' ? 'fifi' : 'crane'} criteria={g.criteria} />
         </>
       )}
       <div className="table-wrap">
@@ -211,6 +227,33 @@ function GroupSection({ g, r }: { g: CriteriaGroupResult; r: Results }) {
               ] as [string, string][]).map(([k, v]) => <tr key={k}><td>{k}</td><td className="num">{v}</td></tr>)}
             </tbody>
           </table>
+        </details>
+      )}
+      {g.chart === 'FIFI' && r.fifi && (
+        <details className="calc-details">
+          <summary>Fire-fighting heeling moment details</summary>
+          <table className="grid"><tbody>
+            <tr><td>Monitors: n · R · (h − T/2)</td><td className="num">{f(r.fifi.monitorMoment, 2)} t·m</td></tr>
+            <tr><td>Thruster: S · (T/2 − e)</td><td className="num">{f(r.fifi.thrusterMoment, 2)} t·m</td></tr>
+            <tr><td>Total heeling moment M</td><td className="num">{f(r.fifi.moment, 2)} t·m</td></tr>
+            <tr><td>Heeling arm at 0° = M / Δ (varies with cos φ)</td><td className="num">{f(r.fifi.arm0, 4)} m</td></tr>
+            <tr><td>Equilibrium heel (towards {r.fifi.side < 0 ? 'port' : 'starboard'})</td><td className="num">{f(r.fifi.equilibrium, 2)}°</td></tr>
+          </tbody></table>
+        </details>
+      )}
+      {g.chart === 'CRANE' && r.crane && (
+        <details className="calc-details">
+          <summary>Crane operation calculation details</summary>
+          <table className="grid"><tbody>
+            <tr><td>Wind heeling moment during lift</td><td className="num">{f(r.crane.moment, 2)} t·m</td></tr>
+            <tr><td>Wind heeling lever</td><td className="num">{f(r.crane.lw, 4)} m</td></tr>
+            <tr><td>φ1 equilibrium heel (crane load in weights + wind)</td><td className="num">{f(r.crane.phi1, 2)}°</td></tr>
+            <tr><td>φ2 = min(θf, angle of vanishing stability, 2nd intercept)</td><td className="num">{f(r.crane.phi2, 2)}°</td></tr>
+            <tr><td>ARL area under righting lever φ1→φ2</td><td className="num">{f(r.crane.arl, 4)} m·rad</td></tr>
+            <tr><td>AHL area under wind lever φ1→φ2</td><td className="num">{f(r.crane.ahl, 4)} m·rad</td></tr>
+            <tr><td>Residual area φ1 → 20° (or θf)</td><td className="num">{f(r.crane.areaTo20, 4)} m·rad</td></tr>
+            <tr><td>Deck edge immersion angle</td><td className="num">{f(r.crane.deckEdgeAngle, 2)}°</td></tr>
+          </tbody></table>
         </details>
       )}
     </section>

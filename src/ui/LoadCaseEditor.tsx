@@ -1,6 +1,6 @@
-import type { LoadCase, Results, TankInput, Vessel, WeightItem } from '../engine/types';
+import type { GroupDef, LoadCase, Results, TankInput, Vessel, WeightItem } from '../engine/types';
 import { newId } from '../store';
-import { CRITERIA_GROUPS, DEFAULT_GROUP_IDS } from '../engine/criteriaGroups';
+import { BUILTIN_GROUPS, DEFAULT_GROUP_IDS } from '../engine/criteriaGroups';
 import { f } from './format';
 
 const MODES: { value: TankInput['mode']; label: string; unit: string }[] = [
@@ -16,9 +16,10 @@ interface Props {
   lc: LoadCase;
   r: Results | null;
   onChange: (lc: LoadCase) => void;
+  customGroups: GroupDef[];
 }
 
-export function LoadCaseEditor({ vessel, lc, r, onChange }: Props) {
+export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props) {
   const set = (patch: Partial<LoadCase>) => onChange({ ...lc, ...patch });
 
   const setTankMode = (tankId: string, mode: TankInput['mode']) => {
@@ -84,7 +85,7 @@ export function LoadCaseEditor({ vessel, lc, r, onChange }: Props) {
         </div>
         <fieldset className="group-select">
           <legend>Stability groups to check</legend>
-          {CRITERIA_GROUPS.map((g) => {
+          {[...BUILTIN_GROUPS, ...customGroups].map((g) => {
             const sel = lc.criteriaGroups ?? vessel.criteriaGroups ?? DEFAULT_GROUP_IDS;
             const on = sel.includes(g.id);
             return (

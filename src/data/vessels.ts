@@ -22,11 +22,12 @@ interface ExtractCondition {
 
 const marsol = vesselFromBooklet(marsolExtract as unknown as BookletExtract);
 const marsolCases: LoadCase[] = (marsolExtract.conditions as unknown as ExtractCondition[])
-  .filter((c) => ['C2', 'C3', 'C4', 'C5'].includes(c.id))
+  .filter((c) => c.id !== 'C1')
   .map((c) => ({
     id: `marsol-${c.id}`,
-    name: `${c.name.replace(/^Condition (\d+): /, 'Cond. $1: ')} (booklet)`,
-    type: /arrival/i.test(c.name) ? 'Arrival' : 'Departure',
+    name: `${c.name.replace(/^Condition ([\d.]+): /, 'Cond. $1: ')} (booklet)`,
+    type: /crane/i.test(c.name) ? 'Crane operation' : /arrival/i.test(c.name) ? 'Arrival' : 'Departure',
+    criteriaGroups: /crane/i.test(c.name) ? ['CRANE_OPS'] : marsol.criteriaGroups,
     seaDensity: 1.025,
     fsmMethod: 'MANUAL_TOTAL',
     fsmTotal: c.fsmUsed[0] ?? 0,

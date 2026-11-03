@@ -98,6 +98,10 @@ export interface Vessel {
   openings: Opening[];
   /** Load line (summer) draft at midship, m. */
   maxDraft?: number;
+  /** Fire-fighting ship data (BV): monitors and transverse thruster, forces in t, heights above base in m. */
+  fifi?: { monitorForce: number; monitorCount: number; monitorHeight: number; thrusterForce: number; thrusterHeight: number; maxHeel: number };
+  /** Crane operation data: maximum design heel of the crane and wind during lifting. */
+  crane?: { maxHeel: number; windSpeedKnots: number; airDensity: number; windCoefficient: number };
   /** Stability groups that apply to this vessel by default (ids). */
   criteriaGroups?: string[];
   /** X (from AP) of the draft origin used by trimmed hydrostatic tables (default LBP/2). */
@@ -175,7 +179,16 @@ export interface GzPoint {
   gz: number;
 }
 
+/** Drawing hints so each group's diagram can show exactly what its criteria measure. */
+export type CriterionViz =
+  | { type: 'area'; from: number; to: number }
+  | { type: 'hline'; value: number; from: number; label: string }
+  | { type: 'vline'; angle: number; label: string };
+
 export interface CriterionResult {
+  /** id of the criterion definition */
+  id?: string;
+  viz?: CriterionViz[];
   code: string;
   description: string;
   regulation: string;
@@ -189,7 +202,54 @@ export interface CriterionResult {
   explanation?: string;
 }
 
-export type GroupChart = 'GENERAL' | 'WEATHER';
+export type GroupChart = 'GENERAL' | 'WEATHER' | 'FIFI' | 'CRANE';
+
+/** Building blocks for user-defined criteria (all measured on the GZ curve towards the side of heel). */
+export type CriterionKind =
+  | 'AREA'          // area under GZ between two angles (optionally limited by the flooding angle)
+  | 'GZ_AT'         // GZ at a given angle
+  | 'GZ_MAX_FROM'   // largest GZ at angles ≥ a given angle
+  | 'ANGLE_GZMAX'   // angle of maximum GZ
+  | 'GM'            // initial metacentric height (corrected for free surface)
+  | 'RANGE'         // range of positive stability (AVS − static heel)
+  | 'HEEL'          // static heel angle
+  | 'SPECIAL';      // engine-defined (OSV area rule, weather, fire-fighting, crane)
+
+export interface CriterionDef {
+  id: string;
+  name: string;
+  kind: CriterionKind;
+  comparator: '>=' | '<=';
+  required: number;
+  params?: { from?: number; to?: number; angle?: number; capAtFlood?: boolean };
+  regulation?: string;
+  builtin?: boolean;
+}
+
+export interface GroupDef {
+  id: string;
+  name: string;
+  regulation: string;
+  description: string;
+  chart: GroupChart;
+  criterionIds: string[];
+  builtin?: boolean;
+}
+
+export interface CriteriaLibrary {
+  criteria: CriterionDef[];
+  groups: GroupDef[];
+}
+
+export interface FifiDetail {
+  monitorMoment: number; thrusterMoment: number; moment: number; arm0: number;
+  equilibrium: number; side: 1 | -1;
+}
+
+export interface CraneDetail {
+  moment: number; lw: number; phi1: number; phi2: number; arl: number; ahl: number;
+  areaTo20: number; deckEdgeAngle: number; side: 1 | -1;
+}
 
 export interface CriteriaGroupResult {
   id: string;
@@ -230,6 +290,8 @@ export interface Results {
   draftMS: number;
   trim: number;
   heel: number;
+  /** Side the stability criteria and GZ curve refer to: 1 starboard, −1 port (side of static heel). */
+  side: 1 | -1;
   lcb: number;
   lcf: number;
   kmt: number;
@@ -250,6 +312,8 @@ export interface Results {
   criteria: CriterionResult[];        // all evaluated criteria (flat)
   groups: CriteriaGroupResult[];      // applied stability groups, each with its criteria
   weather: WeatherDetail | null;
+  fifi: FifiDetail | null;
+  crane: CraneDetail | null;
   warnings: Warning[];
   overallPass: boolean;
 }

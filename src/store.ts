@@ -2,10 +2,10 @@
 // Phase 1 MVP: localStorage. Planned: IndexedDB + sync (see docs/03-System-Architecture.md §10).
 import { useEffect, useState } from 'react';
 import { VESSELS } from './data/vessels';
-import type { LoadCase } from './engine/types';
+import type { CriteriaLibrary, CriterionDef, GroupDef, LoadCase, Vessel } from './engine/types';
 
-const KEY = 'stabilitysoft.loadcases.v2';
-const ACTIVE = 'stabilitysoft.active.v2';
+const KEY = 'stabilitysoft.loadcases.v3';
+const ACTIVE = 'stabilitysoft.active.v3';
 
 type Saved = Record<string, LoadCase[]>; // vesselId -> load cases
 
@@ -58,12 +58,52 @@ export function useLoadCases() {
       setActiveState({ vesselId: entry.id, caseId: copy.id });
     },
     create: () => {
-      const base = structuredClone(entry.defaultLoadCases[0]);
-      const lc2: LoadCase = { ...base, id: newId(), name: 'New load case' };
+      const lc2 = emptyLoadCase(entry.vessel, cases.length + 1);
       setCases((cs) => [...cs, lc2]);
       setActiveState({ vesselId: entry.id, caseId: lc2.id });
     },
     remove: (id: string) => setCases((cs) => (cs.length > 1 ? cs.filter((c) => c.id !== id) : cs)),
     resetToBooklet: () => setCases(() => structuredClone(entry.defaultLoadCases)),
+  };
+}
+
+/** A new load case: lightship only, all tanks empty, the vessel's default stability groups. */
+export function emptyLoadCase(vessel: Vessel, n: number): LoadCase {
+  return {
+    id: newId(),
+    name: `New load case ${n}`,
+    type: 'Departure',
+    seaDensity: 1.025,
+    fsmMethod: 'ACTUAL',
+    tanks: Object.fromEntries(vessel.tanks.map((t) => [t.id, { input: { mode: 'PERCENT' as const, value: 0 } }])),
+    weights: [],
+    criteriaGroups: vessel.criteriaGroups,
+  };
+}
+
+// ---------------- user-defined criteria and groups ----------------
+const LIB_KEY = 'stabilitysoft.library.v1';
+
+export function useLibrary() {
+  const [lib, setLib] = useState<CriteriaLibrary>(() => {
+    try {
+      const raw = localStorage.getItem(LIB_KEY);
+      if (raw) {
+        const x = JSON.parse(raw) as CriteriaLibrary;
+        if (Array.isArray(x.criteria) && Array.isArray(x.groups)) return x;
+      }
+    } catch { /* ignore */ }
+    return { criteria: [], groups: [] };
+  });
+  useEffect(() => { try { localStorage.setItem(LIB_KEY, JSON.stringify(lib)); } catch { /* ignore */ } }, [lib]);
+  return {
+    lib,
+    addCriterion: (c: CriterionDef) => setLib((l) => ({ ...l, criteria: [...l.criteria, c] })),
+    removeCriterion: (id: string) => setLib((l) => ({
+      criteria: l.criteria.filter((c) => c.id !== id),
+      groups: l.groups.map((g) => ({ ...g, criterionIds: g.criterionIds.filter((x) => x !== id) })),
+    })),
+    saveGroup: (g: GroupDef) => setLib((l) => ({ ...l, groups: l.groups.some((x) => x.id === g.id) ? l.groups.map((x) => (x.id === g.id ? g : x)) : [...l.groups, g] })),
+    removeGroup: (id: string) => setLib((l) => ({ ...l, groups: l.groups.filter((g) => g.id !== id) })),
   };
 }

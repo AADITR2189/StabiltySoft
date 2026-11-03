@@ -4,16 +4,17 @@ import {
 } from './math';
 import { resolveTank } from './tanks';
 import type {
-  CriteriaGroupResult, CriterionResult, GzPoint, LoadCase, Results, TankResult, Vessel, Warning, WeatherDetail,
+  CraneDetail, CriteriaGroupResult, CriteriaLibrary, CriterionDef, CriterionResult, FifiDetail, GzPoint, LoadCase,
+  Results, TankResult, Vessel, Warning, WeatherDetail,
 } from './types';
-import { CRITERIA_GROUPS, DEFAULT_GROUP_IDS } from './criteriaGroups';
+import { BUILTIN_CRITERIA, BUILTIN_GROUPS, DEFAULT_GROUP_IDS, EMPTY_LIBRARY } from './criteriaGroups';
 import { knAtCondition, solveHydrostatics } from './hydro';
 
 export const ENGINE_VERSION = '0.1.0';
 const G = 9.81;
 const WIND_P = 504; // N/m², unrestricted service
 
-export function calculate(vessel: Vessel, lc: LoadCase): Results {
+export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary = EMPTY_LIBRARY): Results {
   const warnings: Warning[] = [];
   if (!(lc.seaDensity > 0)) throw new EngineError('INVALID_DENSITY', 'Sea water density must be greater than 0.');
 
@@ -80,24 +81,13 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
   const gz = (deg: number) => knOf(deg) - kgFluid * Math.sin(deg * DEG) - tcg * Math.cos(deg * DEG);
 
   const gzEnd = Math.min(lc.gzMaxAngle ?? 90, maxTableAngle);
-  const gzTable: GzPoint[] = kn.angles
-    .filter((a) => a <= gzEnd)
-    .map((a) => {
-      const k = knOf(a);
-      const kgSin = kgFluid * Math.sin(a * DEG);
-      const tcgCos = tcg * Math.cos(a * DEG);
-      return { heel: a, kn: k, kgSin, tcgCos, gz: k - kgSin - tcgCos };
-    });
-  const gzCurve: { heel: number; gz: number }[] = [];
-  for (let a = 0; a <= gzEnd + 1e-9; a += 1) gzCurve.push({ heel: a, gz: gz(a) });
 
   // Static heel (root of GZ nearest upright)
   let heel = 0;
   const gz0 = gz(0);
   if (Math.abs(gz0) > 1e-12 || gmFluid <= 0) {
-    const side = gz0 < 0 || (gz0 === 0 && gmFluid <= 0) ? 1 : -1;
-    const lim = side * Math.min(60, maxTableAngle);
-    const root = firstCrossing(gz, 0, side * 1e-6, lim, 0.1);
+    const dir = gz0 < 0 || (gz0 === 0 && gmFluid <= 0) ? 1 : -1;
+    const root = firstCrossing(gz, 0, dir * 1e-6, dir * Math.min(60, maxTableAngle), 0.1);
     if (root === null) {
       throw new EngineError('NO_EQUILIBRIUM', 'No equilibrium heel angle found within 60°: the vessel capsizes in this condition.');
     }
@@ -105,25 +95,41 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
     if (gmFluid <= 0) warnings.push({ code: 'NEGATIVE_INITIAL_GM', message: `GM fluid is ${gmFluid.toFixed(3)} m. Angle of loll ≈ ${Math.abs(heel).toFixed(1)}°.` });
   }
 
-  // GZmax, angle of max, AVS (to starboard)
+  // All stability criteria are measured towards the side to which the ship heels (worst case).
+  // For port the curve is mirrored: gzS(φ) = −GZ(−φ) = KN − KG·sin φ − (−TCG)·cos φ.
+  const side: 1 | -1 = heel < -1e-9 ? -1 : 1;
+  const tcgS = side * tcg;
+  const gzS = (deg: number) => side * gz(side * deg);
+
+  const gzTable: GzPoint[] = kn.angles
+    .filter((a) => a <= gzEnd)
+    .map((a) => {
+      const k = knOf(a);
+      const kgSin = kgFluid * Math.sin(a * DEG);
+      const tcgCos = tcgS * Math.cos(a * DEG);
+      return { heel: a, kn: k, kgSin, tcgCos, gz: k - kgSin - tcgCos };
+    });
+  const gzCurve: { heel: number; gz: number }[] = [];
+  for (let a = 0; a <= gzEnd + 1e-9; a += 1) gzCurve.push({ heel: a, gz: gzS(a) });
+
+  // GZmax, angle of max, AVS (on the side of heel)
   let gzMax = -Infinity;
   let gzMaxAngle = 0;
   for (let a = 0; a <= gzEnd + 1e-9; a += 0.1) {
-    const v = gz(a);
+    const v = gzS(a);
     if (v > gzMax) { gzMax = v; gzMaxAngle = a; }
   }
-  // golden-section refinement around the sample maximum
   {
     let a = Math.max(0, gzMaxAngle - 0.1), b = Math.min(gzEnd, gzMaxAngle + 0.1);
-    const r = (Math.sqrt(5) - 1) / 2;
+    const g = (Math.sqrt(5) - 1) / 2;
     for (let i = 0; i < 40; i++) {
-      const c = b - r * (b - a), d = a + r * (b - a);
-      if (gz(c) > gz(d)) b = d; else a = c;
+      const c = b - g * (b - a), d = a + g * (b - a);
+      if (gzS(c) > gzS(d)) b = d; else a = c;
     }
     const m = 0.5 * (a + b);
-    if (gz(m) > gzMax) { gzMax = gz(m); gzMaxAngle = m; }
+    if (gzS(m) > gzMax) { gzMax = gzS(m); gzMaxAngle = m; }
   }
-  const avs = firstCrossing(gz, 0, gzMaxAngle, gzEnd, 0.1);
+  const avs = firstCrossing(gzS, 0, gzMaxAngle, gzEnd, 0.1);
 
   // ---------- §A.7.3 Down-flooding & deck edge ----------
   let floodAngle = 90;
@@ -140,60 +146,66 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
   if (floodOpening && floodAngle <= 0) {
     warnings.push({ code: 'OPENING_SUBMERGED', message: `Opening "${floodOpening}" is below the waterline.` });
   }
-  // Deck edge immersion: lowest freeboard along the length (deck at side, no sheer), i.e. at the deeper end.
-  const deckEdgeAngle = Math.atan(Math.max(0, vessel.depth - Math.max(draftAP, draftFP, draftMS)) / (vessel.breadth / 2)) / DEG;
-
-  // ---------- Stability groups selected for this load case ----------
-  const selected = new Set(lc.criteriaGroups ?? vessel.criteriaGroups ?? DEFAULT_GROUP_IDS);
-
-  // ---------- §A.8 Group IS2008_GENERAL (IS Code 2008 Part A §2.2) ----------
-  const criteria: CriterionResult[] = [];
-  const area = (a: number, b: number) => integrateDeg(gz, a, b);
-  const lim40 = Math.min(40, floodAngle);
   if (floodAngle < 30) {
     warnings.push({ code: 'DOWNFLOODING_BELOW_30', message: `Down-flooding angle ${floodAngle.toFixed(1)}° is below 30°. Engineering review required.` });
   }
-  criteria.push(ge('IS-2.2.1.1', 'Area under GZ curve 0° to 30°', 'IS Code 2008 A 2.2.1', 'm·rad', 0.055, area(0, Math.min(30, floodAngle))));
-  criteria.push(ge('IS-2.2.1.2', `Area under GZ curve 0° to ${lim40 < 40 ? 'θf (' + lim40.toFixed(1) + '°)' : '40°'}`, 'IS Code 2008 A 2.2.1', 'm·rad', 0.09, area(0, lim40)));
-  criteria.push(ge('IS-2.2.1.3', `Area under GZ curve 30° to ${lim40 < 40 ? 'θf (' + lim40.toFixed(1) + '°)' : '40°'}`, 'IS Code 2008 A 2.2.1', 'm·rad', 0.03, lim40 > 30 ? area(30, lim40) : 0));
-  let gzAt30 = -Infinity;
-  for (let a = 30; a <= gzEnd + 1e-9; a += 0.1) gzAt30 = Math.max(gzAt30, gz(a));
-  criteria.push(ge('IS-2.2.2', 'Righting lever GZ at an angle ≥ 30°', 'IS Code 2008 A 2.2.2', 'm', 0.2, gzAt30));
-  criteria.push(ge('IS-2.2.3', 'Angle of maximum GZ', 'IS Code 2008 A 2.2.3', '°', 25, gzMaxAngle));
-  criteria.push(ge('IS-2.2.4', 'Initial metacentric height GM₀', 'IS Code 2008 A 2.2.4', 'm', 0.15, gmFluid));
+  // Deck edge immersion: lowest freeboard along the length (deck at side, no sheer), i.e. at the deeper end.
+  const deckEdgeAngle = Math.atan(Math.max(0, vessel.depth - Math.max(draftAP, draftFP, draftMS)) / (vessel.breadth / 2)) / DEG;
 
-  // ---------- Group OSV_INTACT (IS Code 2008 Part B 2.4.5, OSV equivalent criteria) ----------
-  if (selected.has('OSV_INTACT')) {
-    const tm = gzMaxAngle;
-    let reqA: number, upTo: number, label: string;
-    if (tm <= 15) { reqA = 0.07; upTo = 15; label = 'Area under GZ curve 0° to 15° (θmax ≤ 15°)'; }
-    else if (tm >= 30) { reqA = 0.055; upTo = 30; label = 'Area under GZ curve 0° to 30° (θmax ≥ 30°)'; }
-    else { reqA = 0.055 + 0.001 * (30 - tm); upTo = tm; label = `Area under GZ curve 0° to θmax (${tm.toFixed(2)}°): 0.055 + 0.001·(30 − θmax)`; }
-    const osv = (c: CriterionResult) => { c.regulation = 'OSV 2.2 / IS 2008 B 2.4.5'; return c; };
-    criteria.push(osv(ge('OSV-1', label, '', 'm·rad', reqA, area(0, Math.min(upTo, floodAngle)))));
-    criteria.push(osv(ge('OSV-2', `Area under GZ curve 0° to ${lim40 < 40 ? 'θf (' + lim40.toFixed(1) + '°)' : '40°'}`, '', 'm·rad', 0.09, area(0, lim40))));
-    criteria.push(osv(ge('OSV-3', `Area under GZ curve 30° to ${lim40 < 40 ? 'θf (' + lim40.toFixed(1) + '°)' : '40°'}`, '', 'm·rad', 0.03, lim40 > 30 ? area(30, lim40) : 0)));
-    criteria.push(osv(ge('OSV-4', 'Righting lever GZ at an angle ≥ 30°', '', 'm', 0.2, gzAt30)));
-    criteria.push(osv(ge('OSV-5', 'Angle of maximum GZ', '', '°', 15, tm)));
-    criteria.push(osv(ge('OSV-6', 'Initial metacentric height GM₀', '', 'm', 0.15, gmFluid)));
-  }
+  const area = (a: number, b: number) => (b > a ? integrateDeg(gzS, a, b) : 0);
+  const angLabel = (to: number, cap: boolean) => (cap && floodAngle < to ? `θf (${floodAngle.toFixed(1)}°)` : `${to}°`);
 
-  // ---------- §A.9 Group IS2008_WEATHER (IS Code 2008 Part A §2.3) ----------
-  let weather: WeatherDetail | null = null;
-  let weatherError: string | undefined;
-  if (selected.has('IS2008_WEATHER')) {
-    try {
-      weather = weatherCriterion();
-    } catch (e) {
-      if (e instanceof EngineError) {
-        weatherError = `The weather criterion could not be evaluated: ${e.message}`;
-        warnings.push({ code: e.code, message: weatherError });
-      } else throw e;
+  // ---------- Generic criteria (building blocks) ----------
+  function evalGeneric(d: CriterionDef): CriterionResult {
+    const p = d.params ?? {};
+    const reg = d.regulation ?? 'User-defined';
+    switch (d.kind) {
+      case 'AREA': {
+        const from = p.from ?? 0;
+        const to = p.capAtFlood ? Math.min(p.to ?? 30, floodAngle) : (p.to ?? 30);
+        const r = cmp(d, `Area under GZ curve ${from}° to ${angLabel(p.to ?? 30, !!p.capAtFlood)}`, reg, 'm·rad', area(from, to));
+        r.viz = [{ type: 'area', from, to: Math.max(from, to) }];
+        return r;
+      }
+      case 'GZ_AT': {
+        const a = p.angle ?? 30;
+        const r = cmp(d, `Righting lever GZ at ${a}°`, reg, 'm', gzS(a));
+        r.viz = [{ type: 'hline', value: d.required, from: a, label: `GZ ${d.comparator === '>=' ? '≥' : '≤'} ${d.required} m at ${a}°` }, { type: 'vline', angle: a, label: `${a}°` }];
+        return r;
+      }
+      case 'GZ_MAX_FROM': {
+        const a = p.from ?? 30;
+        let v = -Infinity;
+        for (let x = a; x <= gzEnd + 1e-9; x += 0.1) v = Math.max(v, gzS(x));
+        const r = cmp(d, `Righting lever GZ at an angle ≥ ${a}°`, reg, 'm', v);
+        r.viz = [{ type: 'hline', value: d.required, from: a, label: `GZ ≥ ${d.required} m at ≥ ${a}°` }];
+        return r;
+      }
+      case 'ANGLE_GZMAX': {
+        const r = cmp(d, `Angle of maximum GZ ${d.comparator === '>=' ? '≥' : '≤'} ${d.required}°`, reg, '°', gzMaxAngle);
+        r.viz = [{ type: 'vline', angle: d.required, label: `${d.required}° (angle of GZmax)` }];
+        return r;
+      }
+      case 'GM':
+        return cmp(d, `Initial metacentric height GM₀ ${d.comparator === '>=' ? '≥' : '≤'} ${d.required} m`, reg, 'm', gmFluid);
+      case 'RANGE':
+        return cmp(d, 'Range of positive stability', reg, '°', (avs ?? gzEnd) - Math.abs(heel));
+      case 'HEEL':
+        return cmp(d, `Static heel ≤ ${d.required}°`, reg, '°', Math.abs(heel));
+      default:
+        throw new EngineError('UNKNOWN_CRITERION', `Criterion "${d.name}" has an unknown type.`);
     }
   }
 
-  function weatherCriterion(): WeatherDetail {
+  // ---------- Special criteria (engine-defined), computed on demand ----------
+  let weather: WeatherDetail | null = null;
+  let fifi: FifiDetail | null = null;
+  let crane: CraneDetail | null = null;
+  const special = new Map<string, CriterionResult>();
+
+  function windTable(): { A: number; hA: number; hU: number } {
     const wd = vessel.windage.map((r) => r.draft);
+    if (wd.length < 2) throw new EngineError('NO_WINDAGE', 'no wind area (windage) table is available for this vessel.');
     assertIncreasing(wd, 'Windage table (draft)');
     let A = lerp(wd, vessel.windage.map((r) => r.area), draftMS, 'Windage table');
     let hA = lerp(wd, vessel.windage.map((r) => r.centroidZ), draftMS, 'Windage table');
@@ -203,13 +215,29 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
       hA = (A * hA + kahanSum(extra.map((w) => w.windArea! * (w.windCentroidZ ?? 0)))) / aSum;
       A = aSum;
     }
-    const d = draftMean;
     const hasU = vessel.windage.every((r) => typeof r.underwaterCentroidZ === 'number');
-    const hU = hasU ? lerp(wd, vessel.windage.map((r) => r.underwaterCentroidZ as number), draftMS, 'Windage table') : d / 2;
+    const hU = hasU ? lerp(wd, vessel.windage.map((r) => r.underwaterCentroidZ as number), draftMS, 'Windage table') : draftMean / 2;
+    return { A, hA, hU };
+  }
+
+  function computeOSV1() {
+    const tm = gzMaxAngle;
+    let reqA: number, upTo: number, label: string;
+    if (tm <= 15) { reqA = 0.07; upTo = 15; label = 'Area under GZ curve 0° to 15° (θmax ≤ 15°)'; }
+    else if (tm >= 30) { reqA = 0.055; upTo = 30; label = 'Area under GZ curve 0° to 30° (θmax ≥ 30°)'; }
+    else { reqA = 0.055 + 0.001 * (30 - tm); upTo = tm; label = `Area under GZ curve 0° to θmax (${tm.toFixed(2)}°): 0.055 + 0.001·(30 − θmax)`; }
+    const to = Math.min(upTo, floodAngle);
+    const r = ge('OSV-1', label, 'OSV 2.2 / IS 2008 B 2.4.5', 'm·rad', reqA, area(0, to));
+    r.viz = [{ type: 'area', from: 0, to }];
+    special.set('OSV-1', r);
+  }
+
+  function computeWeather() {
+    const { A, hA, hU } = windTable();
+    const d = draftMean;
     const Z = hA - hU;
     const lw1 = (WIND_P * A * Z) / (1000 * G * disp);
     const lw2 = 1.5 * lw1;
-
     const B = vessel.breadth;
     const Bd = B / d;
     const X1 = tableFactor([2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.4, 3.5], [1.0, 0.98, 0.96, 0.95, 0.93, 0.91, 0.9, 0.88, 0.86, 0.82, 0.8], Bd).value;
@@ -226,16 +254,11 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
     const Troll = (2 * C * B) / Math.sqrt(gmFluid);
     const s = tableFactor([6, 7, 8, 12, 14, 16, 18, 20], [0.1, 0.098, 0.093, 0.065, 0.053, 0.044, 0.038, 0.035], Troll).value;
     const theta1 = 109 * k * X1 * X2 * Math.sqrt(Math.max(0, r * s));
-
     if (Bd >= 3.5) warnings.push({ code: 'WEATHER_PARAM_RANGE', message: `B/d = ${Bd.toFixed(2)} is outside the validated range (< 3.5) of the roll-angle formula.` });
     const kgd = kgFluid / d - 1;
     if (kgd < -0.3 || kgd > 0.5) warnings.push({ code: 'WEATHER_PARAM_RANGE', message: `KG/d − 1 = ${kgd.toFixed(2)} is outside the validated range (−0.3 to 0.5) of the roll-angle formula.` });
     if (Troll > 20) warnings.push({ code: 'WEATHER_PARAM_RANGE', message: `Roll period ${Troll.toFixed(1)} s exceeds 20 s (validated range of the roll-angle formula).` });
 
-    // Wind acts towards the side to which the ship already heels (worst case). For port,
-    // the curve is mirrored so the same formulas apply: gzS(φ) = −GZ(−φ).
-    const side = heel < 0 ? -1 : 1;
-    const gzS = side > 0 ? gz : (x: number) => -gz(-x);
     const theta0 = firstCrossing(gzS, lw1, 0, gzEnd, 0.05);
     if (theta0 === null) throw new EngineError('WIND_EXCEEDS_GZ', 'steady wind lever exceeds the maximum righting lever.');
     const thetaR = theta0 - theta1;
@@ -251,69 +274,143 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
       areaA = integrateDeg((x) => lw2 - gzS(x), thetaR, thetaX);
       areaB = theta2 > thetaX ? integrateDeg((x) => gzS(x) - lw2, thetaX, theta2) : 0;
     }
-
     const heelLimit = Math.min(16, 0.8 * deckEdgeAngle);
-    criteria.push(le('IS-2.3-HEEL', `Steady wind heel θ₀ ≤ ${heelLimit < 16 ? '0.8 × deck edge angle' : '16°'}`, 'IS Code 2008 A 2.3.1', '°', heelLimit, theta0));
+    special.set('IS-2.3-HEEL', le('IS-2.3-HEEL', `Steady wind heel θ₀ ≤ ${heelLimit < 16 ? '0.8 × deck edge angle' : '16°'}`, 'IS Code 2008 A 2.3.1', '°', heelLimit, theta0));
     const areaCrit = ge('IS-2.3-AREA', 'Weather criterion: area b ≥ area a', 'IS Code 2008 A 2.3.1', 'm·rad', areaA, areaB);
     if (thetaX === null) {
       areaCrit.passed = false;
       areaCrit.explanation = 'The gust wind heeling lever exceeds the maximum righting lever: the ship cannot resist the gust.';
     }
-    criteria.push(areaCrit);
-
-    return {
+    special.set('IS-2.3-AREA', areaCrit);
+    weather = {
       P: WIND_P, A, Z, hA, lw1, lw2, Bd, Cb: cb, X1, X2, k, r, OG, C, Troll, s,
       theta0, theta1, thetaR, thetaX, thetaC, theta2, areaA, areaB, deckEdgeAngle, side,
     };
   }
 
-  // ---------- §A.10 Explanations ----------
-  for (const c of criteria) {
-    if (!c.passed && !c.explanation) c.explanation = explain(c);
+  function computeFifi() {
+    const f = vessel.fifi;
+    if (!f) throw new EngineError('NO_FIFI_DATA', 'no fire-fighting monitor / thruster data is entered for this vessel.');
+    // BV: heeling arm = [Σ R·(h − T/2) + S·(T/2 − e)]·cos φ / Δ  (forces in t, Δ in t)
+    const half = draftMS / 2;
+    const monitorMoment = f.monitorForce * f.monitorCount * (f.monitorHeight - half);
+    const thrusterMoment = f.thrusterForce * (half - f.thrusterHeight);
+    const moment = monitorMoment + thrusterMoment;
+    const arm0 = moment / disp;
+    const eq = firstCrossing((x) => gzS(x) - arm0 * Math.cos(x * DEG), 0, 0, gzEnd, 0.05);
+    if (eq === null) throw new EngineError('FIFI_EXCEEDS_GZ', 'the fire-fighting heeling arm exceeds the righting lever.');
+    fifi = { monitorMoment, thrusterMoment, moment, arm0, equilibrium: eq, side };
+    const c = le('FIFI-1', `Heel at equilibrium under water-jet reaction and thruster < ${f.maxHeel}°`, 'Bureau Veritas, fire-fighting ships', '°', f.maxHeel, eq);
+    c.passed = eq < f.maxHeel;
+    special.set('FIFI-1', c);
   }
+
+  function computeCrane() {
+    const cr = vessel.crane;
+    if (!cr) throw new EngineError('NO_CRANE_DATA', 'no crane data (design heel, lifting wind) is entered for this vessel.');
+    const { A, hA, hU } = windTable();
+    const v = cr.windSpeedKnots * 0.514444;
+    const q = 0.5 * cr.airDensity * v * v; // N/m²
+    const moment = (q * cr.windCoefficient * A * (hA - hU)) / 9806.65; // t·m
+    const lw = moment / disp;
+    const phi1 = firstCrossing(gzS, lw, 0, gzEnd, 0.05);
+    if (phi1 === null) throw new EngineError('CRANE_EXCEEDS_GZ', 'the wind heeling lever during lifting exceeds the righting lever.');
+    const second = firstCrossing(gzS, lw, phi1 + 0.5, gzEnd, 0.05);
+    const avsS = firstCrossing(gzS, 0, Math.max(phi1 + 0.5, gzMaxAngle), gzEnd, 0.05) ?? gzEnd;
+    const phi2 = Math.min(floodAngle, avsS, second ?? Infinity);
+    const arl = phi2 > phi1 ? integrateDeg(gzS, phi1, phi2) : 0;
+    const ahl = phi2 > phi1 ? integrateDeg(() => lw, phi1, phi2) : 0;
+    const to20 = Math.min(20, floodAngle);
+    const areaTo20 = to20 > phi1 ? integrateDeg((x) => gzS(x) - lw, phi1, to20) : 0;
+    crane = { moment, lw, phi1, phi2, arl, ahl, areaTo20, deckEdgeAngle, side };
+    special.set('CRANE-1', le('CRANE-1', `Equilibrium heel with crane load and ${cr.windSpeedKnots} kn wind ≤ ${cr.maxHeel}° (crane design heel)`, 'IS 2008 B 2.9.3.2.1', '°', cr.maxHeel, phi1));
+    const r2 = ge('CRANE-2', 'Area ratio ARL / AHL ≥ 1.4 (equilibrium to φ2)', 'IS 2008 B 2.9.4.1.2', '', 1.4, ahl > 0 ? arl / ahl : 0);
+    special.set('CRANE-2', r2);
+    const r3 = ge('CRANE-3', `Residual area from equilibrium to ${to20 < 20 ? 'θf' : '20°'}`, 'IS 2008 B 2.9.4.1.2', 'm·rad', 0.03, areaTo20);
+    r3.viz = [{ type: 'area', from: phi1, to: Math.max(phi1, to20) }];
+    special.set('CRANE-3', r3);
+    special.set('CRANE-4', ge('CRANE-4', 'Deck edge not immersed at equilibrium (deck immersion angle ≥ equilibrium heel)', 'IS 2008 B 2.9.4.1.2', '°', phi1, deckEdgeAngle));
+  }
+
+  const SPECIAL_SOURCE: Record<string, () => void> = {
+    'OSV-1': computeOSV1, 'IS-2.3-HEEL': computeWeather, 'IS-2.3-AREA': computeWeather,
+    'FIFI-1': computeFifi, 'CRANE-1': computeCrane, 'CRANE-2': computeCrane, 'CRANE-3': computeCrane, 'CRANE-4': computeCrane,
+  };
+  const specialErrors = new Map<() => void, string>();
+  function evalSpecial(id: string): CriterionResult {
+    if (!special.has(id)) {
+      const fn = SPECIAL_SOURCE[id];
+      if (!fn) throw new EngineError('UNKNOWN_CRITERION', `Unknown criterion ${id}.`);
+      if (specialErrors.has(fn)) throw new EngineError('GROUP_ERROR', specialErrors.get(fn)!);
+      try { fn(); } catch (e) {
+        if (e instanceof EngineError) { specialErrors.set(fn, e.message); throw e; }
+        throw e;
+      }
+    }
+    return special.get(id)!;
+  }
+
+  // ---------- Groups ----------
+  const allCriteria = [...BUILTIN_CRITERIA, ...library.criteria];
+  const allGroups = [...BUILTIN_GROUPS, ...library.groups];
+  const selectedIds = lc.criteriaGroups ?? vessel.criteriaGroups ?? DEFAULT_GROUP_IDS;
+  const groups: CriteriaGroupResult[] = [];
+  for (const g of allGroups.filter((x) => selectedIds.includes(x.id))) {
+    const list: CriterionResult[] = [];
+    let error: string | undefined;
+    for (const cid of g.criterionIds) {
+      const def = allCriteria.find((c) => c.id === cid);
+      if (!def) { error = `Criterion ${cid} no longer exists.`; continue; }
+      try {
+        const r = { ...(def.kind === 'SPECIAL' ? evalSpecial(def.id) : evalGeneric(def)) };
+        r.id = def.id;
+        list.push(r);
+      } catch (e) {
+        if (!(e instanceof EngineError)) throw e;
+        error = `This group could not be evaluated: ${e.message}`;
+      }
+    }
+    if (error && !warnings.some((w) => w.message === error)) warnings.push({ code: 'GROUP_NOT_EVALUATED', message: `${g.name}: ${error}` });
+    groups.push({
+      id: g.id, name: g.name, regulation: g.regulation, description: g.description, chart: g.chart,
+      criteria: list, error, passed: !error && list.length > 0 && list.every((c) => c.passed),
+    });
+  }
+
+  // ---------- §A.10 Explanations ----------
+  for (const g of groups) for (const c of g.criteria) if (!c.passed && !c.explanation) c.explanation = explain(c);
   function explain(c: CriterionResult): string {
     const shortBy = `${fmt(Math.abs(c.marginAbs), c.unit)} (${Math.abs(c.marginPct).toFixed(1)} %)`;
     let s = `${c.description}: actual ${fmt(c.actual, c.unit)} ${c.comparator === '>=' ? 'is below the minimum' : 'exceeds the maximum'} of ${fmt(c.required, c.unit)} by ${shortBy}.`;
-    if (c.code !== 'IS-2.3-HEEL') {
-      const slack = [...tanks].filter((t) => t.fsm > 0).sort((a, b) => b.fsm - a.fsm);
-      s += ` KG corrected for free surface is ${kgFluid.toFixed(3)} m, of which ${fsc.toFixed(3)} m is free surface correction`;
-      s += slack.length ? ` from ${slack.length} slack tank(s) (largest: ${slack[0].name}, ${slack[0].fsm.toFixed(0)} t·m).` : '.';
-      s += ' Consider lowering the centre of gravity: press up or empty slack tanks, fill double-bottom ballast, or lower/reduce high weights.';
-    } else {
-      s += ' Reduce the wind heeling lever (less windage area) or increase GM.';
-    }
+    if (c.code === 'IS-2.3-HEEL') return s + ' Reduce the wind heeling lever (less windage area) or increase GM.';
+    if (c.code.startsWith('CRANE')) return s + ' Reduce the lifted load or outreach, lower the crane, or add counter-ballast on the opposite side.';
+    const slack = [...tanks].filter((t) => t.fsm > 0).sort((a, b) => b.fsm - a.fsm);
+    s += ` KG corrected for free surface is ${kgFluid.toFixed(3)} m, of which ${fsc.toFixed(3)} m is free surface correction`;
+    s += slack.length ? ` from ${slack.length} slack tank(s) (largest: ${slack[0].name}, ${slack[0].fsm.toFixed(0)} t·m).` : '.';
+    s += ' Consider lowering the centre of gravity: press up or empty slack tanks, fill double-bottom ballast, or lower/reduce high weights.';
     return s;
   }
 
-  // ---------- Group results ----------
-  const groupCodes: Record<string, string[]> = {
-    IS2008_GENERAL: ['IS-2.2.1.1', 'IS-2.2.1.2', 'IS-2.2.1.3', 'IS-2.2.2', 'IS-2.2.3', 'IS-2.2.4'],
-    IS2008_WEATHER: ['IS-2.3-HEEL', 'IS-2.3-AREA'],
-    OSV_INTACT: ['OSV-1', 'OSV-2', 'OSV-3', 'OSV-4', 'OSV-5', 'OSV-6'],
-  };
-  const groups: CriteriaGroupResult[] = CRITERIA_GROUPS.filter((g) => selected.has(g.id)).map((g) => {
-    const list = criteria.filter((c) => groupCodes[g.id]?.includes(c.code));
-    const error = g.id === 'IS2008_WEATHER' ? weatherError : undefined;
-    return {
-      id: g.id, name: g.name, regulation: g.regulation, description: g.description, chart: g.chart,
-      criteria: list,
-      error,
-      passed: !error && list.length > 0 && list.every((c) => c.passed),
-    };
-  });
-  const appliedCriteria = groups.flatMap((g) => g.criteria);
+  const seen = new Set<string>();
+  const appliedCriteria = groups.flatMap((g) => g.criteria).filter((c) => (seen.has(c.code) ? false : (seen.add(c.code), true)));
   const overallPass = groups.length > 0 && groups.every((g) => g.passed) && !warnings.some((w) => w.code === 'NEGATIVE_INITIAL_GM');
 
   return {
     displacement: disp,
     deadweight: disp - vessel.lightship.weight,
     lcg, tcg, kg, sumFsm, fsc, kgFluid,
-    draftMean: draft, draftAP, draftFP, draftMS, trim, heel,
+    draftMean: draft, draftAP, draftFP, draftMS, trim, heel, side,
     lcb, lcf, kmt, mtc, tpc, gmSolid, gmFluid,
     floodAngle, floodOpening, deckEdgeAngle,
     gzMax, gzMaxAngle, avs,
-    gzTable, gzCurve, tanks, summary, criteria: appliedCriteria, groups, weather, warnings, overallPass,
+    gzTable, gzCurve, tanks, summary, criteria: appliedCriteria, groups, weather, fifi, crane, warnings, overallPass,
   };
+}
+
+function cmp(d: CriterionDef, description: string, regulation: string, unit: string, actual: number): CriterionResult {
+  return d.comparator === '<='
+    ? le(d.id, description, regulation, unit, d.required, actual)
+    : ge(d.id, description, regulation, unit, d.required, actual);
 }
 
 function ge(code: string, description: string, regulation: string, unit: string, required: number, actual: number): CriterionResult {
@@ -329,6 +426,6 @@ function le(code: string, description: string, regulation: string, unit: string,
 function fmt(v: number, unit: string): string {
   if (unit === 'm·rad') return `${v.toFixed(4)} m·rad`;
   if (unit === '°') return `${v.toFixed(1)}°`;
+  if (unit === '') return v.toFixed(3);
   return `${v.toFixed(3)} ${unit}`;
 }
-

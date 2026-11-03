@@ -41,8 +41,11 @@ GZ computed directly). StabilitySoft interpolates the booklet's own hydrostatic 
 
 | Cond | (1) Area 0–θmax | (2) Area 0–40/θf | (3) Area 30–40/θf | (4) GZ ≥30° | (5) θ of GZmax | (6) GM |
 |---|---|---|---|---|---|---|
+| C1 | 0.365 / 0.386 | 0.806 / 0.747 | 0.22 / 0.239 | 1.456 / 1.536 | 24.65 / 25.56 | 5.004 / 5.001 |
 | C2 | 0.16 / 0.197 | 0.377 / 0.383 | 0.103 / 0.108 | 0.623 / 0.639 | 19.96 / 23.14 | 3.632 / 3.629 |
 | C3 | 0.278 / 0.283 | 0.507 / 0.509 | 0.145 / 0.147 | 0.91 / 0.918 | 24.88 / 25.13 | 3.897 / 3.894 |
+| C4 | 0.381 / 0.372 | 0.564 / 0.557 | 0.183 / 0.185 | 1.05 / 1.066 | 33.13 / 35.60 | 2.245 / 4.103 |
+| C5 | 0.415 / 0.433 | 0.782 / 0.776 | 0.24 / 0.240 | 1.503 / 1.503 | 25.41 / 26.15 | 4.912 / 4.800 |
 
 **≠** marks a PASS/FAIL disagreement (none expected).
 
@@ -56,6 +59,32 @@ GZ computed directly). StabilitySoft interpolates the booklet's own hydrostatic 
 | C4 | 0.0815 / 0.0815 | 23.32 / 24.90 | 2.245 / 2.026 | 5.23 / 4.65 | PASS / PASS |
 | C5 | 0.1207 / 0.1206 | 27.67 / 29.53 | 1.671 / 1.502 | 9.71 / 8.49 | PASS / PASS |
 
+## Fire-fighting criterion: heel at equilibrium (booklet / StabilitySoft)
+
+The booklet always applies the heeling moment to starboard; StabilitySoft applies it towards the side of the static heel (worst case).
+
+| Cond | Equilibrium heel ° | Heeling moment t·m (ours) | Result |
+|---|---|---|---|
+| C2 | 0.53 / 0.45 | 69.75 | PASS / PASS |
+| C3 | 0.42 / 0.36 | 66.40 | PASS / PASS |
+| C4 | 0.84 / 0.84 | 68.53 | PASS / PASS |
+| C5 | 0.46 / 0.48 | 61.61 | PASS / PASS |
+
+## Crane operation criteria (booklet / StabilitySoft)
+
+The booklet's ratio (2) is integrated from 0° ("Abs. Ratio from 0.00 deg"); StabilitySoft integrates from the equilibrium angle φ1 as written in IS Code Part B 2.9.4, so the ratios are not directly comparable.
+
+| Cond | (1) Equilibrium heel ° | (2) ARL/AHL | (3) Residual area to 20° m·rad | (4) Deck immersion angle ° | Result |
+|---|---|---|---|---|---|
+| C2T | 3.49 / 3.17 | 55.30 / 55.26 | 0.099 / 0.099 | 6.27 / 6.32 | PASS / PASS |
+| C2V | 1.04 / 0.90 | 61.50 / 56.04 | 0.131 / 0.131 | 6.26 / 6.32 | PASS / PASS |
+| C3T | 3.80 / 3.56 | 67.97 / 66.38 | 0.126 / 0.129 | 8.74 / 8.52 | PASS / PASS |
+| C3V | 1.28 / 1.16 | 71.19 / 64.79 | 0.162 / 0.164 | 8.72 / 8.52 | PASS / PASS |
+| C4T | 3.80 / 3.80 | 93.29 / 89.69 | 0.128 / 0.127 | 8.24 / 7.69 | PASS / PASS |
+| C4V | 1.63 / 1.61 | 100.58 / 90.91 | 0.163 / 0.161 | 8.24 / 7.69 | PASS / PASS |
+| C5T | 3.97 / 3.99 | 78.53 / 74.75 | 0.173 / 0.175 | 13.12 / 11.76 | PASS / PASS |
+| C5V | 1.40 / 1.43 | 83.44 / 75.20 | 0.220 / 0.222 | 13.11 / 11.76 | PASS / PASS |
+
 ## Largest differences over all conditions
 
 | Quantity | Max difference |
@@ -66,4 +95,4 @@ GZ computed directly). StabilitySoft interpolates the booklet's own hydrostatic 
 | Draft at midship | 8 mm |
 | GM fluid | 169 mm |
 | GZ (≤ 60°) | 41 mm |
-| Areas | 0.0372 m·rad |
+| Areas | 0.0590 m·rad |

@@ -2,21 +2,24 @@ import { useEffect, useMemo, useState } from 'react';
 import { VESSELS } from './data/vessels';
 import { calculate, ENGINE_VERSION } from './engine/stability';
 import { EngineError } from './engine/math';
-import type { Results } from './engine/types';
-import { useLoadCases } from './store';
+import type { LoadCase, Results } from './engine/types';
+import { useLibrary, useLoadCases } from './store';
+import { CriteriaLibraryScreen } from './ui/CriteriaLibrary';
 import { LoadCaseEditor } from './ui/LoadCaseEditor';
 import { Criteria, Dashboard, ResultsSidebar, VesselData } from './ui/Screens';
 
-type Screen = 'dashboard' | 'loadcase' | 'criteria' | 'vessel';
+type Screen = 'dashboard' | 'loadcase' | 'criteria' | 'library' | 'vessel';
 const NAV: { id: Screen; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '▣' },
   { id: 'vessel', label: 'Vessel Database', icon: '⛴' },
   { id: 'loadcase', label: 'Load Case', icon: '☰' },
   { id: 'criteria', label: 'Stability Criteria', icon: '✓' },
+  { id: 'library', label: 'Criteria Library', icon: '⚖' },
 ];
 
 export default function App() {
   const store = useLoadCases();
+  const library = useLibrary();
   const vessel = store.entry.vessel;
   const status = store.entry.status;
   const lc = store.active;
@@ -29,16 +32,17 @@ export default function App() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
-  const { r, error } = useMemo((): { r: Results | null; error: string | null } => {
+  const calc = useMemo(() => (x: LoadCase): { r: Results | null; error: string | null } => {
     try {
-      return { r: calculate(vessel, lc), error: null };
+      return { r: calculate(vessel, x, library.lib), error: null };
     } catch (e) {
       if (e instanceof EngineError) return { r: null, error: e.message };
       return { r: null, error: String(e) };
     }
-  }, [vessel, lc]);
+  }, [vessel, library.lib]);
+  const { r, error } = useMemo(() => calc(lc), [calc, lc]);
 
-  const showSidebar = screen !== 'vessel';
+  const showSidebar = screen === 'loadcase' || screen === 'criteria';
 
   return (
     <div className="app">
@@ -72,11 +76,12 @@ export default function App() {
       <main className={`workspace ${showSidebar ? 'with-sidebar' : ''}`}>
         <div className="content">
           {screen === 'dashboard' && (
-            <Dashboard vessel={vessel} cases={store.cases} active={lc} r={r}
+            <Dashboard vessel={vessel} status={status} source={store.entry.source} cases={store.cases} activeId={lc.id} calc={calc}
               onOpen={(id) => { store.setActive(id); setScreen('loadcase'); }}
               onDuplicate={store.duplicate} onCreate={store.create} onRemove={store.remove} />
           )}
-          {screen === 'loadcase' && <LoadCaseEditor vessel={vessel} lc={lc} r={r} onChange={store.update} />}
+          {screen === 'loadcase' && <LoadCaseEditor vessel={vessel} lc={lc} r={r} onChange={store.update} customGroups={library.lib.groups} />}
+          {screen === 'library' && <CriteriaLibraryScreen {...library} />}
           {screen === 'criteria' && (r ? <Criteria r={r} /> : <div className="error-box">{error}</div>)}
           {screen === 'vessel' && <VesselData vessel={vessel} status={status} source={store.entry.source} />}
         </div>

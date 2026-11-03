@@ -256,3 +256,50 @@ describe('stability groups', () => {
     expect(r.groups.find((g) => g.id === 'IS2008_GENERAL')!.passed).toBe(true);
   });
 });
+
+describe('user-defined criteria and groups', () => {
+  const lib = {
+    criteria: [
+      { id: 'U-AREA', name: 'Area 0-30 (user)', kind: 'AREA' as const, comparator: '>=' as const, required: 0.055, params: { from: 0, to: 30, capAtFlood: true } },
+      { id: 'U-GZ25', name: 'GZ at 25', kind: 'GZ_AT' as const, comparator: '>=' as const, required: 0.5, params: { angle: 25 } },
+      { id: 'U-HEEL', name: 'Heel max 1', kind: 'HEEL' as const, comparator: '<=' as const, required: 1 },
+      { id: 'U-RANGE', name: 'Range 50', kind: 'RANGE' as const, comparator: '>=' as const, required: 50 },
+      { id: 'U-GM', name: 'Company GM 3 m', kind: 'GM' as const, comparator: '>=' as const, required: 3 },
+    ],
+    groups: [
+      { id: 'G1', name: 'Company group', regulation: 'Company', description: '', chart: 'GENERAL' as const, criterionIds: ['U-AREA', 'U-GZ25', 'U-HEEL', 'U-RANGE', 'IS-2.2.4'] },
+      { id: 'G2', name: 'Strict GM', regulation: 'Company', description: '', chart: 'GENERAL' as const, criterionIds: ['U-GM'] },
+    ],
+  };
+  const lc = { ...clone(demoLoadCase), criteriaGroups: ['IS2008_GENERAL', 'G1', 'G2'] };
+  const r = calculate(demoVessel, lc, lib);
+
+  it('evaluates a user-defined group made of own and built-in criteria', () => {
+    const g = r.groups.find((x) => x.id === 'G1')!;
+    expect(g.criteria.map((c) => c.code)).toEqual(['U-AREA', 'U-GZ25', 'U-HEEL', 'U-RANGE', 'IS-2.2.4']);
+    expect(g.passed).toBe(true);
+  });
+  it('a user area criterion gives the same value as the identical IS Code criterion', () => {
+    const own = r.groups.find((x) => x.id === 'G1')!.criteria[0];
+    const is = r.groups.find((x) => x.id === 'IS2008_GENERAL')!.criteria[0];
+    expect(own.actual).toBeCloseTo(is.actual, 12);
+    expect(own.viz?.[0]).toEqual({ type: 'area', from: 0, to: 30 });
+  });
+  it('GZ at angle equals the GZ curve value', () => {
+    const c = r.groups.find((x) => x.id === 'G1')!.criteria[1];
+    expect(c.actual).toBeCloseTo(r.gzCurve[25].gz, 9);
+  });
+  it('a failing user group fails the overall result with an explanation', () => {
+    const g = r.groups.find((x) => x.id === 'G2')!;
+    expect(g.passed).toBe(false);
+    expect(g.criteria[0].explanation).toBeTruthy();
+    expect(r.overallPass).toBe(false);
+  });
+  it('fire-fighting and crane groups fail with a reason when the vessel has no such data', () => {
+    const x = calculate(demoVessel, { ...clone(demoLoadCase), criteriaGroups: ['BV_FIFI', 'CRANE_OPS'] });
+    for (const g of x.groups) {
+      expect(g.passed).toBe(false);
+      expect(g.error).toMatch(/no (fire-fighting|crane)/);
+    }
+  });
+});
