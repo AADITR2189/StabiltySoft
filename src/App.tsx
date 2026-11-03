@@ -21,16 +21,8 @@ export default function App() {
   const status = store.entry.status;
   const lc = store.active;
   const [screen, setScreen] = useState<Screen>('dashboard');
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    const sys = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    try { return (localStorage.getItem('stabilitysoft.theme') as 'dark' | 'light') ?? sys; } catch { return sys; }
-  });
   const [online, setOnline] = useState(navigator.onLine);
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('stabilitysoft.theme', theme); } catch { /* ignore */ }
-  }, [theme]);
   useEffect(() => {
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener('online', on); window.addEventListener('offline', off);
@@ -66,7 +58,6 @@ export default function App() {
           </select>
         </label>
         <div className="spacer" />
-        <button className="ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? '☀ Light' : '☾ Dark'}</button>
       </header>
 
       <nav className="sidenav">
