@@ -55,6 +55,8 @@ The current Excel-based stability assessments cause:
 | Heeling moments from user formulas: click each symbol to link it to the load case (Δ, drafts, VCB, KG, TCG, GM, heel angle θ …) or enter a value; heeling arm = M / Δ; moment criteria (heel at equilibrium, residual area, residual arm) | ✅ Working |
 | GZ table and moment calculation tables for every stability group | ✅ Working |
 | Several moments connected to a group: combined heeling moment = sum; criteria can use the group's combined moment; groups can be edited | ✅ Working |
+| Catalogue round 1: Passenger ships (crowding, turning), Grain Code, Pontoons, MODU, Lifting 2.9.3 freeboard, reduced wind pressure, IMO A.167 / A.749, DDS 079-1 style ratio criteria; operation data per load case; edit user criteria | ✅ Working |
+| Tugs/escort, anchor handling, lifting 2.9.5/2.9.7, MODU column alternative, A.562, 46 CFR, class notations | ⏳ Waiting for rule text |
 | Dashboard: general particulars + summary table of all load cases (add, open, duplicate, delete) | ✅ Working |
 | MARSOL SPLENDOR loaded from the booklet, all 13 booklet conditions benchmarked | ✅ Working (data not yet verified) |
 | Single colour theme (Powder Blue / White / Racing Orange), contrast-checked, installable, offline | ✅ Working |

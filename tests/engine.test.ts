@@ -299,7 +299,7 @@ describe('user-defined criteria and groups', () => {
     const x = calculate(demoVessel, { ...clone(demoLoadCase), criteriaGroups: ['BV_FIFI', 'CRANE_OPS'] });
     for (const g of x.groups) {
       expect(g.passed).toBe(false);
-      expect(g.error).toMatch(/no (fire-fighting|crane)/);
+      expect(g.error).toMatch(/no (fire-fighting|crane)/i);
     }
   });
 });

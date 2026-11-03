@@ -98,7 +98,7 @@ export function useLibrary() {
   useEffect(() => { try { localStorage.setItem(LIB_KEY, JSON.stringify(lib)); } catch { /* ignore */ } }, [lib]);
   return {
     lib,
-    addCriterion: (c: CriterionDef) => setLib((l) => ({ ...l, criteria: [...l.criteria, c] })),
+    addCriterion: (c: CriterionDef) => setLib((l) => ({ ...l, criteria: l.criteria.some((x) => x.id === c.id) ? l.criteria.map((x) => (x.id === c.id ? c : x)) : [...l.criteria, c] })),
     removeCriterion: (id: string) => setLib((l) => ({
       criteria: l.criteria.filter((c) => c.id !== id),
       groups: l.groups.map((g) => ({ ...g, criterionIds: g.criterionIds.filter((x) => x !== id) })),

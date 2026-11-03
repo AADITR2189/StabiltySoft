@@ -146,6 +146,8 @@ export interface LoadCase {
   tanks: Record<string, TankStatus>;
   weights: WeightItem[];
   gzMaxAngle?: number; // default 90
+  /** Operation data needed by some stability groups. */
+  ops?: OperationData;
   /** Stability criteria groups applied to this load case (ids). Undefined = all built-in groups. */
   criteriaGroups?: string[];
 }
@@ -218,7 +220,24 @@ export type CriterionKind =
   | 'HEEL_MOMENT'   // equilibrium heel under a user-defined heeling moment
   | 'RESID_AREA'    // residual area (GZ − heeling arm) from equilibrium to an angle
   | 'RESID_GZMAX'   // largest residual arm (GZ − heeling arm)
+  | 'ARM_GZMAX_RATIO' // heeling arm at equilibrium ÷ maximum GZ (e.g. DDS 079-1: ≤ 0.6)
+  | 'RESERVE_RATIO' // reserve area A1 ÷ rolled area A2 with roll-back angle (e.g. DDS 079-1: ≥ 1.4)
   | 'SPECIAL';      // engine-defined (OSV area rule, weather, fire-fighting, crane)
+
+export interface OperationData {
+  /** IS Code 2008 A 2.3 wind pressure, N/m² (504 unrestricted; less only with Administration approval). */
+  windPressure?: number;
+  /** IS Code 2008 A 3.1: passengers crowding to one side. */
+  passengers?: { count: number; massEach: number; lever: number };
+  /** IS Code 2008 A 3.1: service speed for the turning heel (knots). */
+  serviceSpeedKnots?: number;
+  /** International Grain Code: volumetric heeling moment and stowage factor per hold. */
+  grain?: { holds: { name: string; vhm: number; sf: number }[]; deckEdgeLimit: boolean };
+  /** MODU Code 2009: unit type, wind speed (m/s) and area-weighted shape × height coefficient. */
+  modu?: { unitType: 'SURFACE' | 'COLUMN'; windSpeed: number; coefficient: number };
+  /** IS Code 2008 B 2.9.3: lifting in exposed waters and the significant wave height. */
+  lifting?: { exposed: boolean; hs: number };
+}
 
 export interface CriterionDef {
   id: string;

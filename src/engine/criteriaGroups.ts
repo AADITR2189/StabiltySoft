@@ -27,6 +27,28 @@ export const BUILTIN_CRITERIA: CriterionDef[] = [
   { id: 'CRANE-2', name: 'Area ratio ARL / AHL ≥ 1.4 (equilibrium to φ2)', kind: 'SPECIAL', comparator: '>=', required: 1.4, regulation: 'IS 2008 B 2.9.4.1.2' },
   { id: 'CRANE-3', name: 'Residual area from equilibrium to 20° or θf ≥ 0.03 m·rad', kind: 'SPECIAL', comparator: '>=', required: 0.03, regulation: 'IS 2008 B 2.9.4.1.2' },
   { id: 'CRANE-4', name: 'Deck edge not immersed at equilibrium', kind: 'SPECIAL', comparator: '>=', required: 0, regulation: 'IS 2008 B 2.9.4.1.2' },
+  { id: 'CRANE-5', name: 'Freeboard to highest continuous deck at equilibrium ≥ 0.50 m (sheltered) / max(1.0 m, 0.75·Hs) (exposed)', kind: 'SPECIAL', comparator: '>=', required: 0.5, regulation: 'IS 2008 B 2.9.3.2.2 / .3' },
+  // IS Code 2008 Part A 3.1 passenger ships
+  { id: 'PAX-1', name: 'Heel due to passenger crowding to one side ≤ 10°', kind: 'SPECIAL', comparator: '<=', required: 10, regulation: 'IS Code 2008 A 3.1' },
+  { id: 'PAX-2', name: 'Heel due to turning, M_R = 0.200·(v0²/L_WL)·Δ·(KG − d/2), ≤ 10°', kind: 'SPECIAL', comparator: '<=', required: 10, regulation: 'IS Code 2008 A 3.1' },
+  // International Grain Code (IS Code 2008 A 3.4)
+  { id: 'GRAIN-1', name: 'Heel due to grain shift ≤ 12° (or deck-edge immersion angle if less)', kind: 'SPECIAL', comparator: '<=', required: 12, regulation: 'International Grain Code A 7' },
+  { id: 'GRAIN-2', name: 'Residual area (GZ − grain heeling arm) to 40°, θf or angle of maximum difference ≥ 0.075 m·rad', kind: 'SPECIAL', comparator: '>=', required: 0.075, regulation: 'International Grain Code A 7' },
+  { id: 'GRAIN-3', name: 'Initial GM₀ ≥ 0.30 m (grain)', kind: 'GM', comparator: '>=', required: 0.3, regulation: 'International Grain Code A 7' },
+  // IS Code 2008 Part B 2.2 pontoons
+  { id: 'PONT-1', name: 'Area under GZ up to the angle of maximum GZ ≥ 0.08 m·rad', kind: 'SPECIAL', comparator: '>=', required: 0.08, regulation: 'IS Code 2008 B 2.2' },
+  { id: 'PONT-2', name: 'Static heel under 540 N/m² wind ≤ angle immersing half the freeboard', kind: 'SPECIAL', comparator: '<=', required: 0, regulation: 'IS Code 2008 B 2.2' },
+  { id: 'PONT-3', name: 'Range of stability ≥ 20°', kind: 'RANGE', comparator: '>=', required: 20, regulation: 'IS Code 2008 B 2.2' },
+  // MODU Code 2009
+  { id: 'MODU-1', name: 'Area under righting moment to 2nd intercept or θf ≥ 1.4 (surface / self-elevating) or 1.3 (column-stabilised) × wind heeling area', kind: 'SPECIAL', comparator: '>=', required: 1.4, regulation: 'MODU Code 2009 3.4' },
+  { id: 'MODU-2', name: 'Righting moment positive from upright to the 2nd intercept', kind: 'SPECIAL', comparator: '>=', required: 0, regulation: 'MODU Code 2009 3.4' },
+  // IMO A.167(ES.IV), 1968 (superseded)
+  { id: 'A167-1', name: 'Area under GZ curve 0° to 30°', kind: 'AREA', comparator: '>=', required: 0.055, params: { from: 0, to: 30, capAtFlood: true }, regulation: 'IMO A.167(ES.IV)' },
+  { id: 'A167-2', name: 'Area under GZ curve 0° to 40° or θf', kind: 'AREA', comparator: '>=', required: 0.09, params: { from: 0, to: 40, capAtFlood: true }, regulation: 'IMO A.167(ES.IV)' },
+  { id: 'A167-3', name: 'Area under GZ curve 30° to 40° or θf', kind: 'AREA', comparator: '>=', required: 0.03, params: { from: 30, to: 40, capAtFlood: true }, regulation: 'IMO A.167(ES.IV)' },
+  { id: 'A167-4', name: 'Righting lever GZ at an angle ≥ 30°', kind: 'GZ_MAX_FROM', comparator: '>=', required: 0.2, params: { from: 30 }, regulation: 'IMO A.167(ES.IV)' },
+  { id: 'A167-5', name: 'Angle of maximum GZ ≥ 25° (preferably > 30°)', kind: 'ANGLE_GZMAX', comparator: '>=', required: 25, regulation: 'IMO A.167(ES.IV)' },
+  { id: 'A167-6', name: 'Initial metacentric height GM₀ ≥ 0.15 m', kind: 'GM', comparator: '>=', required: 0.15, regulation: 'IMO A.167(ES.IV)' },
 ].map((c) => ({ ...(c as CriterionDef), builtin: true }));
 
 export const BUILTIN_GROUPS: GroupDef[] = [
@@ -55,6 +77,41 @@ export const BUILTIN_GROUPS: GroupDef[] = [
     description: 'Lifting with crane and load at the most unfavourable position, with wind during the lift.',
     chart: 'CRANE', criterionIds: ['CRANE-1', 'CRANE-2', 'CRANE-3', 'CRANE-4'],
   },
+  {
+    id: 'LIFT_293', name: 'Lifting Operations (IS Code B 2.9.3)', regulation: 'IS Code 2008 Part B 2.9.3 (MSC.415(97))',
+    description: 'Crane and load in the loading condition: equilibrium heel within the crane design heel and minimum freeboard. Use together with the General and Weather groups.',
+    chart: 'CRANE', criterionIds: ['CRANE-1', 'CRANE-5'],
+  },
+  {
+    id: 'IS2008_PAX', name: 'Passenger Ships (IS Code 2008 A 3.1)', regulation: 'IMO IS Code 2008, Part A, 3.1',
+    description: 'Heel due to passengers crowding to one side and heel due to turning, each ≤ 10°. Enter passengers and service speed in the load case.',
+    chart: 'GENERAL', criterionIds: ['PAX-1', 'PAX-2'],
+  },
+  {
+    id: 'GRAIN', name: 'Grain in Bulk (International Grain Code)', regulation: 'IS Code 2008 A 3.4 / International Grain Code A 7',
+    description: 'Grain shift heeling arm λ0 = Σ(VHM / SF) / Δ, λ40 = 0.8·λ0. Enter the holds in the load case.',
+    chart: 'GENERAL', criterionIds: ['GRAIN-1', 'GRAIN-2', 'GRAIN-3'],
+  },
+  {
+    id: 'PONTOON', name: 'Pontoons (IS Code 2008 B 2.2)', regulation: 'IMO IS Code 2008, Part B, 2.2',
+    description: 'Unmanned non-propelled pontoons: area to θmax, wind heel under 540 N/m², range of stability.',
+    chart: 'GENERAL', criterionIds: ['PONT-1', 'PONT-2', 'PONT-3'],
+  },
+  {
+    id: 'MODU', name: 'Mobile Offshore Drilling Units (MODU Code 2009)', regulation: 'MODU Code 2009, Chapter 3',
+    description: 'Righting energy against wind heeling energy (36 m/s operating, 51.5 m/s severe storm). Enter unit type, wind speed and wind coefficient in the load case.',
+    chart: 'GENERAL', criterionIds: ['MODU-1', 'MODU-2'],
+  },
+  {
+    id: 'IMO_A167', name: 'IMO A.167(ES.IV), 1968 (superseded)', regulation: 'IMO Res. A.167(ES.IV)',
+    description: 'Original general intact criteria, for existing ships approved under this resolution and for comparison.',
+    chart: 'GENERAL', criterionIds: ['A167-1', 'A167-2', 'A167-3', 'A167-4', 'A167-5', 'A167-6'],
+  },
+  {
+    id: 'IMO_A749', name: 'IMO A.749(18) IS Code 1993 (superseded)', regulation: 'IMO Res. A.749(18) as amended by MSC.75(69)',
+    description: 'General and weather criteria of the 1993 IS Code (numerically the same as IS Code 2008 Part A 2.2 and 2.3).',
+    chart: 'GENERAL', criterionIds: ['IS-2.2.1.1', 'IS-2.2.1.2', 'IS-2.2.1.3', 'IS-2.2.2', 'IS-2.2.3', 'IS-2.2.4', 'IS-2.3-HEEL', 'IS-2.3-AREA'],
+  },
 ].map((g) => ({ ...(g as GroupDef), builtin: true }));
 
 export const DEFAULT_GROUP_IDS = ['IS2008_GENERAL', 'IS2008_WEATHER'];
@@ -73,6 +130,8 @@ export const CRITERION_KINDS: { kind: Exclude<CriterionDef['kind'], 'SPECIAL'>; 
   { kind: 'HEEL_MOMENT', label: 'Heel at equilibrium under a heeling moment', unit: '°', comparator: '<=', fields: ['moment'] },
   { kind: 'RESID_AREA', label: 'Residual area (GZ − heeling arm) from equilibrium to an angle', unit: 'm·rad', comparator: '>=', fields: ['moment', 'to', 'capAtFlood'] },
   { kind: 'RESID_GZMAX', label: 'Largest residual arm (GZ − heeling arm)', unit: 'm', comparator: '>=', fields: ['moment'] },
+  { kind: 'ARM_GZMAX_RATIO', label: 'Heeling arm at equilibrium ÷ maximum GZ (e.g. DDS 079-1: ≤ 0.6)', unit: '', comparator: '<=', fields: ['moment'] },
+  { kind: 'RESERVE_RATIO', label: 'Reserve area ratio A1 ÷ A2 with roll-back angle (e.g. DDS 079-1: ≥ 1.4)', unit: '', comparator: '>=', fields: ['moment', 'angle', 'to', 'capAtFlood'] },
 ];
 
 /** Load case values a moment formula symbol can be linked to. */

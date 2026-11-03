@@ -103,6 +103,8 @@ export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props)
         </fieldset>
       </section>
 
+      <OperationPanel lc={lc} vessel={vessel} set={set} />
+
       <section className="panel">
         <div className="panel-head"><h2>Tanks</h2><span className="muted">Choose how you enter each tank. The rest is calculated.</span></div>
         <div className="table-wrap">
@@ -226,5 +228,98 @@ function NumInput({ value, onCommit, step }: { value: number; onCommit: (v: numb
       }}
       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
     />
+  );
+}
+
+/** Inputs needed by the selected stability groups (passengers, speed, grain holds, MODU wind, lifting waters, wind pressure). */
+function OperationPanel({ lc, vessel, set }: { lc: LoadCase; vessel: Vessel; set: (p: Partial<LoadCase>) => void }) {
+  const sel = lc.criteriaGroups ?? vessel.criteriaGroups ?? DEFAULT_GROUP_IDS;
+  const has = (...ids: string[]) => ids.some((id) => sel.includes(id));
+  const ops = lc.ops ?? {};
+  const setOps = (p: Partial<NonNullable<LoadCase['ops']>>) => set({ ops: { ...ops, ...p } });
+  const pax = ops.passengers ?? { count: 0, massEach: 0.075, lever: 0 };
+  const grain = ops.grain ?? { holds: [], deckEdgeLimit: true };
+  const modu = ops.modu ?? { unitType: 'SURFACE' as const, windSpeed: 36, coefficient: 1.0 };
+  const lift = ops.lifting ?? { exposed: false, hs: 0 };
+  const show = { wx: has('IS2008_WEATHER', 'IMO_A749'), pax: has('IS2008_PAX'), grain: has('GRAIN'), modu: has('MODU'), lift: has('LIFT_293') };
+  if (!Object.values(show).some(Boolean)) return null;
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>Operation data</h2><span className="muted small">Inputs for the selected stability groups</span></div>
+      <div className="ops">
+        {show.wx && (
+          <fieldset className="ops-box">
+            <legend>Weather criterion</legend>
+            <label>Wind pressure P (N/m²)<NumInput value={ops.windPressure ?? 504} onCommit={(v) => setOps({ windPressure: v })} /></label>
+            <p className="muted small">504 N/m² for unrestricted service. A lower value only for restricted service with Administration approval.</p>
+          </fieldset>
+        )}
+        {show.pax && (
+          <fieldset className="ops-box">
+            <legend>Passenger ship (IS Code A 3.1)</legend>
+            <label>Number of passengers<NumInput value={pax.count} onCommit={(v) => setOps({ passengers: { ...pax, count: v } })} /></label>
+            <label>Mass per passenger (t)<NumInput value={pax.massEach} step={0.001} onCommit={(v) => setOps({ passengers: { ...pax, massEach: v } })} /></label>
+            <label>Crowd transverse lever (m)<NumInput value={pax.lever} onCommit={(v) => setOps({ passengers: { ...pax, lever: v } })} /></label>
+            <label>Service speed (kn)<NumInput value={ops.serviceSpeedKnots ?? 0} onCommit={(v) => setOps({ serviceSpeedKnots: v })} /></label>
+            <p className="muted small">Lever: distance from centreline to the centre of the crowd when passengers move to one side (4 persons/m² on available deck). Passenger weights must also be in the loading condition.</p>
+          </fieldset>
+        )}
+        {show.grain && (
+          <fieldset className="ops-box wide">
+            <legend>Grain holds (International Grain Code)</legend>
+            <table className="grid">
+              <thead><tr><th>Hold</th><th className="num">VHM (m⁴)</th><th className="num">Stowage factor (m³/t)</th><th className="num">VHM ÷ SF (t·m)</th><th /></tr></thead>
+              <tbody>
+                {grain.holds.map((h, i) => {
+                  const upd = (p: Partial<typeof h>) => setOps({ grain: { ...grain, holds: grain.holds.map((x, j) => (j === i ? { ...x, ...p } : x)) } });
+                  return (
+                    <tr key={i}>
+                      <td><input value={h.name} onChange={(e) => upd({ name: e.target.value })} aria-label="Hold name" /></td>
+                      <td className="num"><NumInput value={h.vhm} onCommit={(v) => upd({ vhm: v })} /></td>
+                      <td className="num"><NumInput value={h.sf} step={0.01} onCommit={(v) => upd({ sf: v })} /></td>
+                      <td className="num">{h.sf > 0 ? (h.vhm / h.sf).toFixed(1) : '—'}</td>
+                      <td><button className="ghost" onClick={() => setOps({ grain: { ...grain, holds: grain.holds.filter((_, j) => j !== i) } })} aria-label="Remove hold">✕</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="form-row">
+              <button onClick={() => setOps({ grain: { ...grain, holds: [...grain.holds, { name: `Hold ${grain.holds.length + 1}`, vhm: 0, sf: 1.3 }] } })}>+ Add hold</button>
+              <label className="check inline"><input type="checkbox" checked={grain.deckEdgeLimit} onChange={(e) => setOps({ grain: { ...grain, deckEdgeLimit: e.target.checked } })} /><span>Ship built on or after 1 Jan 1994: limit heel to deck-edge immersion angle if less than 12°</span></label>
+            </div>
+            <p className="muted small">Enter the volumetric heeling moment of each hold from the approved grain loading booklet (filled or partly filled, as applicable).</p>
+          </fieldset>
+        )}
+        {show.modu && (
+          <fieldset className="ops-box">
+            <legend>MODU (MODU Code 2009)</legend>
+            <label>Unit type
+              <select value={modu.unitType} onChange={(e) => setOps({ modu: { ...modu, unitType: e.target.value as 'SURFACE' | 'COLUMN' } })}>
+                <option value="SURFACE">Surface / self-elevating (ratio 1.4)</option>
+                <option value="COLUMN">Column-stabilised (ratio 1.3)</option>
+              </select>
+            </label>
+            <label>Wind speed (m/s)
+              <select value={String(modu.windSpeed)} onChange={(e) => setOps({ modu: { ...modu, windSpeed: Number(e.target.value) } })}>
+                <option value="36">36 m/s (70 kn): normal operation</option>
+                <option value="51.5">51.5 m/s (100 kn): severe storm</option>
+                {![36, 51.5].includes(modu.windSpeed) && <option value={String(modu.windSpeed)}>{modu.windSpeed} m/s</option>}
+              </select>
+            </label>
+            <label>Wind coefficient Cs·Ch (area-weighted)<NumInput value={modu.coefficient} step={0.01} onCommit={(v) => setOps({ modu: { ...modu, coefficient: v } })} /></label>
+            <p className="muted small">Shape (Cs) and height (Ch) coefficients per MODU Code 2009 Ch.3, averaged over the windage areas.</p>
+          </fieldset>
+        )}
+        {show.lift && (
+          <fieldset className="ops-box">
+            <legend>Lifting (IS Code B 2.9.3)</legend>
+            <label className="check inline"><input type="checkbox" checked={lift.exposed} onChange={(e) => setOps({ lifting: { ...lift, exposed: e.target.checked } })} /><span>Lifting in exposed waters</span></label>
+            {lift.exposed && <label>Highest significant wave height Hs (m)<NumInput value={lift.hs} onCommit={(v) => setOps({ lifting: { ...lift, hs: v } })} /></label>}
+            <p className="muted small">Minimum freeboard: 0.50 m in non-exposed waters; in exposed waters 1.00 m or 0.75·Hs, whichever is greater.</p>
+          </fieldset>
+        )}
+      </div>
+    </section>
   );
 }

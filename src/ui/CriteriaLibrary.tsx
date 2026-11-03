@@ -23,9 +23,13 @@ interface Props {
 export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, saveGroup, removeGroup, saveMoment, removeMoment, preview, lcName }: Props) {
   const moments = lib.moments ?? [];
   const [editing, setEditing] = useState<GroupDef | null>(null);
+  const [editCrit, setEditCrit] = useState<CriterionDef | null>(null);
+  const usedIn = (id: string) => [...BUILTIN_GROUPS, ...lib.groups].filter((g) => g.criterionIds.includes(id)).map((g) => g.name);
   const all = [...BUILTIN_CRITERIA, ...lib.criteria];
   const unitOf = (c: CriterionDef) =>
-    c.kind === 'SPECIAL' ? (c.id.includes('AREA') || c.id === 'OSV-1' || c.id === 'CRANE-3' ? 'm·rad' : c.id === 'CRANE-2' ? '' : '°') : CRITERION_KINDS.find((k) => k.kind === c.kind)?.unit ?? '';
+    c.kind === 'SPECIAL'
+      ? (c.id.includes('AREA') || ['OSV-1', 'CRANE-3', 'GRAIN-2', 'PONT-1'].includes(c.id) ? 'm·rad' : ['CRANE-2', 'MODU-1'].includes(c.id) ? '×' : c.id === 'CRANE-5' ? 'm' : c.id === 'MODU-2' ? 'm (GZ > 0)' : '°')
+      : CRITERION_KINDS.find((k) => k.kind === c.kind)?.unit ?? '';
 
   return (
     <div className="stack">
@@ -63,7 +67,7 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
           </div>
         </section>
       )}
-      <CriterionForm onSave={addCriterion} moments={moments} />
+      <CriterionForm key={`crit-${editCrit?.id ?? 'new'}`} onSave={(c) => { addCriterion(c); setEditCrit(null); }} moments={moments} editing={editCrit} onCancel={() => setEditCrit(null)} />
       <section className="panel">
         <div className="panel-head"><h2>Intact stability criteria ({all.length})</h2></div>
         <div className="table-wrap">
@@ -76,14 +80,21 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
                   <td className="muted">{c.regulation ?? 'User-defined'}</td>
                   <td className="num">{c.kind === 'SPECIAL' && c.id === 'IS-2.3-AREA' ? 'b ≥ a' : `${c.comparator === '>=' ? '≥' : '≤'} ${c.required} ${unitOf(c)}`}</td>
                   <td>{c.builtin ? <span className="chip-static">Built-in</span> : <span className="chip-static own">User-defined</span>}</td>
-                  <td>{!c.builtin && <ConfirmDelete label={`Delete ${c.name}`} onConfirm={() => removeCriterion(c.id)} />}</td>
+                  <td>
+                    {!c.builtin && (
+                      <span className="confirm">
+                        <button className="ghost" onClick={() => { setEditCrit(c); document.getElementById('criterion-form')?.scrollIntoView({ behavior: 'smooth' }); }}>Edit</button>
+                        <ConfirmDelete label={`Delete ${c.name}`} onConfirm={() => removeCriterion(c.id)} warning={usedIn(c.id).length ? `Used in: ${usedIn(c.id).join(', ')}. It will be removed from these groups.` : undefined} />
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </section>
-      <GroupBuilder key={editing?.id ?? 'new'} all={all} moments={moments} onSave={(g) => { saveGroup(g); setEditing(null); }} editing={editing} onCancel={() => setEditing(null)} />
+      <GroupBuilder key={`grp-${editing?.id ?? 'new'}`} all={all} moments={moments} onSave={(g) => { saveGroup(g); setEditing(null); }} editing={editing} onCancel={() => setEditing(null)} />
       <section className="panel">
         <div className="panel-head"><h2>Stability groups</h2></div>
         <div className="group-cards">
@@ -113,19 +124,20 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
   );
 }
 
-function CriterionForm({ onSave, moments }: { onSave: (c: CriterionDef) => void; moments: MomentDef[] }) {
-  const [momentId, setMomentId] = useState('GROUP');
-  const [kind, setKind] = useState<Kind>('AREA');
-  const [name, setName] = useState('');
-  const [from, setFrom] = useState('0');
-  const [to, setTo] = useState('30');
-  const [angle, setAngle] = useState('30');
-  const [cap, setCap] = useState(true);
-  const [required, setRequired] = useState('0.055');
-  const [reference, setReference] = useState('');
+function CriterionForm({ onSave, moments, editing, onCancel }: { onSave: (c: CriterionDef) => void; moments: MomentDef[]; editing: CriterionDef | null; onCancel: () => void }) {
+  const ep = editing?.params ?? {};
+  const [momentId, setMomentId] = useState(ep.momentId ?? 'GROUP');
+  const [kind, setKind] = useState<Kind>((editing?.kind as Kind) ?? 'AREA');
+  const [name, setName] = useState(editing?.name ?? '');
+  const [from, setFrom] = useState(String(ep.from ?? 0));
+  const [to, setTo] = useState(String(ep.to ?? 30));
+  const [angle, setAngle] = useState(String(ep.angle ?? 30));
+  const [cap, setCap] = useState(ep.capAtFlood ?? true);
+  const [required, setRequired] = useState(String(editing?.required ?? 0.055));
+  const [reference, setReference] = useState(editing?.regulation && editing.regulation !== 'User-defined' ? editing.regulation : '');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const k = CRITERION_KINDS.find((x) => x.kind === kind)!;
-  const [comparator, setComparator] = useState<'>=' | '<='>(k.comparator);
+  const [comparator, setComparator] = useState<'>=' | '<='>(editing?.comparator ?? k.comparator);
 
   const num = (v: string) => (v.trim() === '' ? NaN : Number(v));
   const save = (e: React.FormEvent) => {
@@ -146,21 +158,23 @@ function CriterionForm({ onSave, moments }: { onSave: (c: CriterionDef) => void;
       : kind === 'HEEL_MOMENT' ? `Heel under ${momName} ${sym} ${req}°`
       : kind === 'RESID_AREA' ? `Residual area under ${momName} to ${t}°${cap ? ' or θf' : ''} ${sym} ${req} m·rad`
       : kind === 'RESID_GZMAX' ? `Residual arm under ${momName} ${sym} ${req} m`
+      : kind === 'ARM_GZMAX_RATIO' ? `Heeling arm at equilibrium ÷ GZmax under ${momName} ${sym} ${req}`
+      : kind === 'RESERVE_RATIO' ? `Reserve area A1/A2 under ${momName}, roll ${a}°, to ${t}°${cap ? ' or θf' : ''} ${sym} ${req}`
       : `${k.label} ${sym} ${req} ${k.unit}`;
     onSave({
-      id: `USER-${newId()}`,
+      id: editing?.id ?? `USER-${newId()}`,
       name: name.trim() || auto,
       kind, comparator, required: req,
       params: { from: k.fields.includes('from') ? f : undefined, to: k.fields.includes('to') ? t : undefined, angle: k.fields.includes('angle') ? a : undefined, capAtFlood: k.fields.includes('capAtFlood') ? cap : undefined, momentId: k.fields.includes('moment') ? momentId : undefined },
       regulation: reference.trim() || 'User-defined',
     });
     setName('');
-    setMsg({ ok: true, text: `Criterion “${name.trim() || auto}” added. Click it in the group builder below to use it.` });
+    setMsg({ ok: true, text: editing ? `Criterion “${name.trim() || auto}” updated. Groups using it are recalculated.` : `Criterion “${name.trim() || auto}” added. Click it in the group builder below to use it.` });
   };
 
   return (
     <section className="panel">
-      <div className="panel-head"><h2>Create intact stability criterion</h2></div>
+      <div className="panel-head" id="criterion-form"><h2>{editing ? `Edit criterion: ${editing.name}` : 'Create intact stability criterion'}</h2></div>
       <form className="form-row" onSubmit={save}>
         <label>Type
           <select id="crit-kind" value={kind} onChange={(e) => { const nk = e.target.value as Kind; setKind(nk); setComparator(CRITERION_KINDS.find((x) => x.kind === nk)!.comparator); }}>
@@ -176,8 +190,8 @@ function CriterionForm({ onSave, moments }: { onSave: (c: CriterionDef) => void;
           </label>
         )}
         {k.fields.includes('from') && <label>From angle (°)<input id="crit-from" type="number" step="any" value={from} onChange={(e) => setFrom(e.target.value)} /></label>}
-        {k.fields.includes('to') && <label>To angle (°)<input id="crit-to" type="number" step="any" value={to} onChange={(e) => setTo(e.target.value)} /></label>}
-        {k.fields.includes('angle') && <label>At angle (°)<input id="crit-angle" type="number" step="any" value={angle} onChange={(e) => setAngle(e.target.value)} /></label>}
+        {k.fields.includes('to') && <label>{k.fields.includes('moment') ? 'Up to angle (°)' : 'To angle (°)'}<input id="crit-to" type="number" step="any" value={to} onChange={(e) => setTo(e.target.value)} /></label>}
+        {k.fields.includes('angle') && <label>{kind === 'RESERVE_RATIO' ? 'Roll-back angle (°)' : 'At angle (°)'}<input id="crit-angle" type="number" step="any" value={angle} onChange={(e) => setAngle(e.target.value)} /></label>}
         {k.fields.includes('capAtFlood') && (
           <label className="check inline"><input id="crit-cap" type="checkbox" checked={cap} onChange={(e) => setCap(e.target.checked)} /><span>Stop at flooding angle θf if smaller</span></label>
         )}
@@ -193,7 +207,10 @@ function CriterionForm({ onSave, moments }: { onSave: (c: CriterionDef) => void;
         </label>
         <label>Name (optional)<input id="crit-name" className="wide" value={name} placeholder="Generated if empty" onChange={(e) => setName(e.target.value)} /></label>
         <label>Reference (optional)<input id="crit-ref" value={reference} placeholder="e.g. Company policy 4.2" onChange={(e) => setReference(e.target.value)} /></label>
-        <div className="form-actions"><button type="submit">Add criterion</button></div>
+        <div className="form-actions confirm">
+          <button type="submit">{editing ? 'Save changes' : 'Add criterion'}</button>
+          {editing && <button type="button" className="ghost" onClick={onCancel}>Cancel editing</button>}
+        </div>
       </form>
       {msg && <p className={msg.ok ? 'ok-text small' : 'fail-text small'} role="status">{msg.text}</p>}
     </section>
@@ -277,10 +294,11 @@ function GroupBuilder({ all, moments, onSave, editing, onCancel }: {
 }
 
 /** Delete with an in-page confirmation step (browser confirm dialogs are not available everywhere). */
-export function ConfirmDelete({ label, onConfirm }: { label: string; onConfirm: () => void }) {
+export function ConfirmDelete({ label, onConfirm, warning }: { label: string; onConfirm: () => void; warning?: string }) {
   const [ask, setAsk] = useState(false);
   return ask ? (
     <span className="confirm">
+      {warning && <span className="warn-text small">{warning}</span>}
       <button className="danger" onClick={() => { onConfirm(); setAsk(false); }}>Delete</button>
       <button className="ghost" onClick={() => setAsk(false)}>Cancel</button>
     </span>

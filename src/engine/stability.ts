@@ -302,13 +302,31 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
         return cmp(d, `Static heel ≤ ${d.required}°`, reg, '°', Math.abs(heel));
       case 'HEEL_MOMENT':
       case 'RESID_AREA':
-      case 'RESID_GZMAX': {
+      case 'RESID_GZMAX':
+      case 'ARM_GZMAX_RATIO':
+      case 'RESERVE_RATIO': {
         const m = (p.momentId ?? 'GROUP') === 'GROUP' ? groupMoment() : userMoment(p.momentId!);
         const pts = m.result.rows.map((x) => ({ heel: x.heel, arm: x.arm }));
         const eq = equilibriumUnder(m.arm, m.result.name);
         if (d.kind === 'HEEL_MOMENT') {
           const r = cmp(d, `Heel at equilibrium under ${m.result.name} ${d.comparator === '>=' ? '≥' : '≤'} ${d.required}°`, reg, '°', eq);
           r.viz = [{ type: 'arm', label: m.result.name, points: pts }, { type: 'vline', angle: eq, label: `Equilibrium ${eq.toFixed(2)}°` }];
+          return r;
+        }
+        if (d.kind === 'ARM_GZMAX_RATIO') {
+          const r = cmp(d, `Heeling arm at equilibrium (${eq.toFixed(2)}°) ÷ GZmax under ${m.result.name}`, reg, '', m.arm(eq) / gzMax);
+          r.viz = [{ type: 'arm', label: m.result.name, points: pts }, { type: 'vline', angle: eq, label: `Equilibrium ${eq.toFixed(2)}°` }];
+          return r;
+        }
+        if (d.kind === 'RESERVE_RATIO') {
+          const roll = p.angle ?? 25;
+          const second = firstCrossing((x) => gzS(x) - m.arm(x), 0, eq + 0.5, gzEnd, 0.05);
+          const lim = Math.min(p.to ?? 70, p.capAtFlood ? floodAngle : Infinity, second ?? Infinity);
+          const a1 = lim > eq ? integrateDeg((x) => gzS(x) - m.arm(x), eq, lim) : 0;
+          const a2 = integrateDeg((x) => m.arm(x) - gzS(x), eq - roll, eq);
+          if (-(eq - roll) > maxTableAngle) throw new EngineError('OUT_OF_TABLE_RANGE', `roll-back angle exceeds the KN table range.`);
+          const r = cmp(d, `Reserve area A1 ÷ A2 under ${m.result.name} (roll ${roll}° to windward, A1 to ${lim.toFixed(1)}°)`, reg, '', a2 > 0 ? a1 / a2 : Infinity);
+          r.viz = [{ type: 'arm', label: m.result.name, points: pts }, { type: 'residArea', from: eq, to: lim, points: pts }, { type: 'vline', angle: eq, label: `Equilibrium ${eq.toFixed(2)}°` }];
           return r;
         }
         if (d.kind === 'RESID_AREA') {
@@ -368,7 +386,9 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     const { A, hA, hU } = windTable();
     const d = draftMean;
     const Z = hA - hU;
-    const lw1 = (WIND_P * A * Z) / (1000 * G * disp);
+    const P = lc.ops?.windPressure ?? WIND_P;
+    if (P < WIND_P) warnings.push({ code: 'REDUCED_WIND_PRESSURE', message: `Reduced wind pressure ${P} N/m² used for the weather criterion: allowed only for restricted service with Administration approval.` });
+    const lw1 = (P * A * Z) / (1000 * G * disp);
     const lw2 = 1.5 * lw1;
     const B = vessel.breadth;
     const Bd = B / d;
@@ -415,7 +435,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     }
     special.set('IS-2.3-AREA', areaCrit);
     weather = {
-      P: WIND_P, A, Z, hA, lw1, lw2, Bd, Cb: cb, X1, X2, k, r, OG, C, Troll, s,
+      P, A, Z, hA, lw1, lw2, Bd, Cb: cb, X1, X2, k, r, OG, C, Troll, s,
       theta0, theta1, thetaR, thetaX, thetaC, theta2, areaA, areaB, deckEdgeAngle, side,
     };
   }
@@ -461,10 +481,124 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     const r3 = ge('CRANE-3', `Residual area from equilibrium to ${to20 < 20 ? 'θf' : '20°'}`, 'IS 2008 B 2.9.4.1.2', 'm·rad', 0.03, areaTo20);
     r3.viz = [{ type: 'area', from: phi1, to: Math.max(phi1, to20) }];
     special.set('CRANE-3', r3);
+    {
+      const lift = lc.ops?.lifting ?? { exposed: false, hs: 0 };
+      const req = lift.exposed ? Math.max(1.0, 0.75 * lift.hs) : 0.5;
+      const fb = vessel.depth - Math.max(draftAP, draftFP) - (vessel.breadth / 2) * Math.tan(phi1 * DEG);
+      special.set('CRANE-5', ge('CRANE-5', `Freeboard to deck at side at equilibrium (${lift.exposed ? `exposed waters, Hs ${lift.hs} m` : 'non-exposed waters'})`, lift.exposed ? 'IS 2008 B 2.9.3.2.3' : 'IS 2008 B 2.9.3.2.2', 'm', req, fb));
+    }
     special.set('CRANE-4', ge('CRANE-4', 'Deck edge not immersed at equilibrium (deck immersion angle ≥ equilibrium heel)', 'IS 2008 B 2.9.4.1.2', '°', phi1, deckEdgeAngle));
   }
 
+  // ---------- moments of built-in groups (shown as moment tables) ----------
+  const specialMoment = new Map<string, { arm: (deg: number) => number; result: MomentResult }>();
+  function builtMoment(id: string, name: string, formula: string, inputs: MomentResult['inputs'], arm: (deg: number) => number, note: string) {
+    const m = { arm, result: { id, name, formula, inputs, rows: tableAngles().map((a) => ({ heel: a, moment: arm(a) * disp, arm: arm(a) })), note } };
+    return m;
+  }
+  const ops = lc.ops ?? {};
+  const lcIn = (name: string, source: string, value: number, unit: string) => ({ name, source, value, unit });
+
+  function computePaxCrowd() {
+    const p = ops.passengers;
+    if (!p || !(p.count > 0)) throw new EngineError('NO_OPS_DATA', 'enter the number of passengers, mass per passenger and crowd lever in the load case (Operation data).');
+    const M0 = p.count * p.massEach * p.lever;
+    const m = builtMoment('pax-crowd', 'Passenger crowding moment', 'M = N · w · y · cos θ', [
+      lcIn('N', 'Load case: operation data', p.count, 'persons'), lcIn('w', 'Load case: operation data', p.massEach, 't'),
+      lcIn('y', 'Load case: transverse lever of crowd', p.lever, 'm'), lcIn('Δ', 'Load case: displacement', disp, 't')],
+      (x) => (M0 * Math.cos(x * DEG)) / disp, 'IS Code 2008 A 3.1: 75 kg per passenger, 4 persons/m², centre 1.0 m above deck (standing). Heeling arm = M / Δ.');
+    specialMoment.set('PAX-1', m);
+    const eq = equilibriumUnder(m.arm, m.result.name);
+    const r = le('PAX-1', 'Heel due to passenger crowding to one side', 'IS Code 2008 A 3.1', '°', 10, eq);
+    r.viz = [{ type: 'arm', label: m.result.name, points: m.result.rows }, { type: 'vline', angle: eq, label: `Crowding heel ${eq.toFixed(2)}°` }];
+    special.set('PAX-1', r);
+  }
+  function computePaxTurn() {
+    const kn = ops.serviceSpeedKnots;
+    if (!(kn && kn > 0)) throw new EngineError('NO_OPS_DATA', 'enter the service speed in the load case (Operation data).');
+    const v0 = kn * 0.514444;
+    if (hs.lwl === null) warnings.push({ code: 'LWL_ASSUMED', message: 'Waterline length is not in the hydrostatic tables: LBP used for the turning heel.' });
+    const arm0 = (0.2 * v0 * v0 / lwl) * (kg - draftMean / 2) / G;
+    const m = builtMoment('pax-turn', 'Turning moment M_R', 'M_R = 0.200 · (v0² / L_WL) · Δ · (KG − d/2) · cos θ   [kN·m → t·m ÷ g]', [
+      lcIn('v0', 'Load case: service speed', v0, 'm/s'), lcIn('L_WL', hs.lwl === null ? 'LBP (no L_WL in tables)' : 'Hydrostatics', lwl, 'm'),
+      lcIn('KG', 'Load case: KG (solid)', kg, 'm'), lcIn('d', 'Load case: mean draft', draftMean, 'm'), lcIn('Δ', 'Load case: displacement', disp, 't')],
+      (x) => arm0 * Math.cos(x * DEG), 'Heeling arm = M_R / (g · Δ).');
+    specialMoment.set('PAX-2', m);
+    const eq = equilibriumUnder(m.arm, m.result.name);
+    const r = le('PAX-2', 'Heel due to turning', 'IS Code 2008 A 3.1', '°', 10, eq);
+    r.viz = [{ type: 'arm', label: m.result.name, points: m.result.rows }, { type: 'vline', angle: eq, label: `Turning heel ${eq.toFixed(2)}°` }];
+    special.set('PAX-2', r);
+  }
+  function computeGrain() {
+    const g = ops.grain;
+    if (!g || !g.holds.length) throw new EngineError('NO_OPS_DATA', 'enter the grain holds (volumetric heeling moment and stowage factor) in the load case (Operation data).');
+    for (const h of g.holds) if (!(h.sf > 0)) throw new EngineError('NO_OPS_DATA', `stowage factor of hold "${h.name}" must be greater than 0.`);
+    const sumM = kahanSum(g.holds.map((h) => h.vhm / h.sf));
+    const l0 = sumM / disp, l40 = 0.8 * l0;
+    const arm = (x: number) => l0 - ((l0 - l40) * x) / 40;
+    const m = builtMoment('grain', 'Grain heeling arm (λ0 → λ40 = 0.8·λ0)', 'λ0 = Σ(VHM / SF) / Δ ; λ(θ) = λ0 − 0.2·λ0·θ/40', [
+      ...g.holds.map((h) => lcIn(`VHM ${h.name}`, `Hold ${h.name}: VHM ÷ SF = ${(h.vhm / h.sf).toFixed(1)} t·m`, h.vhm, 'm⁴')),
+      lcIn('Σ VHM/SF', 'Sum over holds', sumM, 't·m'), lcIn('Δ', 'Load case: displacement', disp, 't'), lcIn('λ0', 'Heeling arm at 0°', l0, 'm')],
+      arm, 'Straight line through λ0 at 0° and λ40 at 40° (International Grain Code A 7), extended beyond 40°.');
+    specialMoment.set('GRAIN-1', m); specialMoment.set('GRAIN-2', m);
+    const eq = equilibriumUnder(arm, m.result.name);
+    const lim = g.deckEdgeLimit ? Math.min(12, deckEdgeAngle) : 12;
+    const r1 = le('GRAIN-1', `Heel due to grain shift ≤ ${g.deckEdgeLimit && deckEdgeAngle < 12 ? 'deck-edge immersion angle' : '12°'}`, 'International Grain Code A 7', '°', lim, eq);
+    r1.viz = [{ type: 'arm', label: m.result.name, points: m.result.rows }, { type: 'vline', angle: eq, label: `Grain heel ${eq.toFixed(2)}°` }];
+    special.set('GRAIN-1', r1);
+    let maxDiffAng = eq, maxDiff = -Infinity;
+    for (let x = eq; x <= Math.min(40, gzEnd) + 1e-9; x += 0.1) { const d = gzS(x) - arm(x); if (d > maxDiff) { maxDiff = d; maxDiffAng = x; } }
+    const to = Math.min(40, floodAngle, maxDiffAng);
+    const area2 = to > eq ? integrateDeg((x) => gzS(x) - arm(x), eq, to) : 0;
+    const r2 = ge('GRAIN-2', `Residual area from ${eq.toFixed(2)}° to ${to.toFixed(1)}° (lesser of 40°, θf, angle of maximum difference)`, 'International Grain Code A 7', 'm·rad', 0.075, area2);
+    r2.viz = [{ type: 'arm', label: m.result.name, points: m.result.rows }, { type: 'residArea', from: eq, to: Math.max(eq, to), points: m.result.rows }];
+    special.set('GRAIN-2', r2);
+  }
+  function computePontoon() {
+    const r1 = ge('PONT-1', `Area under GZ curve 0° to θmax (${gzMaxAngle.toFixed(1)}°)`, 'IS Code 2008 B 2.2', 'm·rad', 0.08, area(0, Math.min(gzMaxAngle, floodAngle)));
+    r1.viz = [{ type: 'area', from: 0, to: Math.min(gzMaxAngle, floodAngle) }];
+    special.set('PONT-1', r1);
+    const { A, hA, hU } = windTable();
+    const lw = (540 * A * (hA - hU)) / (1000 * G * disp);
+    const m = builtMoment('pontoon-wind', 'Wind heeling lever, 540 N/m²', 'l_w = 540 · A · Z / (1000 · g · Δ)', [
+      lcIn('A', 'Windage table at draft', A, 'm²'), lcIn('Z', 'Windage table at draft', hA - hU, 'm'), lcIn('Δ', 'Load case: displacement', disp, 't')], () => lw, 'Constant with heel.');
+    specialMoment.set('PONT-2', m);
+    const eq = equilibriumUnder(m.arm, m.result.name);
+    const fb = vessel.depth - Math.max(draftAP, draftFP);
+    const halfFb = Math.atan(Math.max(0, fb / 2) / (vessel.breadth / 2)) / DEG;
+    const r2 = le('PONT-2', `Static heel under 540 N/m² wind ≤ half-freeboard angle (${halfFb.toFixed(2)}°)`, 'IS Code 2008 B 2.2', '°', halfFb, eq);
+    r2.viz = [{ type: 'arm', label: m.result.name, points: m.result.rows }, { type: 'vline', angle: eq, label: `Wind heel ${eq.toFixed(2)}°` }, { type: 'vline', angle: halfFb, label: `Half freeboard ${halfFb.toFixed(1)}°` }];
+    special.set('PONT-2', r2);
+  }
+  function computeModu() {
+    const mo = ops.modu;
+    if (!mo) throw new EngineError('NO_OPS_DATA', 'enter the MODU unit type, wind speed and wind coefficient in the load case (Operation data).');
+    const { A, hA, hU } = windTable();
+    const q = 0.5 * 1.222 * mo.windSpeed * mo.windSpeed; // N/m²
+    const M = (q * mo.coefficient * A * (hA - hU)) / 9806.65; // t·m
+    const lw = M / disp;
+    const m = builtMoment('modu-wind', `Wind heeling moment, ${mo.windSpeed} m/s`, 'M = ½ · ρ · V² · C · A · Z / 9806.65', [
+      lcIn('V', 'Load case: operation data', mo.windSpeed, 'm/s'), lcIn('ρ', 'Air density', 1.222, 'kg/m³'), lcIn('C', 'Load case: Cs·Ch coefficient', mo.coefficient, ''),
+      lcIn('A', 'Windage table at draft', A, 'm²'), lcIn('Z', 'Windage table at draft', hA - hU, 'm'), lcIn('Δ', 'Load case: displacement', disp, 't')],
+      () => lw, 'Wind heeling moment taken constant with heel (conservative simplification); heeling arm = M / Δ.');
+    specialMoment.set('MODU-1', m); specialMoment.set('MODU-2', m);
+    const eq = equilibriumUnder(m.arm, m.result.name);
+    const second = firstCrossing((x) => gzS(x) - lw, 0, eq + 0.5, gzEnd, 0.05);
+    const lim = Math.min(second ?? gzEnd, floodAngle);
+    const ratio = integrateDeg(gzS, 0, lim) / integrateDeg(() => lw, 0, lim);
+    const req = mo.unitType === 'COLUMN' ? 1.3 : 1.4;
+    const r1 = ge('MODU-1', `Righting / wind heeling area to ${second !== null && second < floodAngle ? '2nd intercept' : 'θf'} (${lim.toFixed(1)}°), ${mo.unitType === 'COLUMN' ? 'column-stabilised' : 'surface / self-elevating'} unit`, 'MODU Code 2009 3.4', '', req, ratio);
+    r1.viz = [{ type: 'arm', label: m.result.name, points: m.result.rows }, { type: 'area', from: 0, to: lim }];
+    special.set('MODU-1', r1);
+    let minGz = Infinity;
+    for (let x = Math.max(0, eq * 0); x <= lim + 1e-9; x += 0.1) if (x >= 0.5) minGz = Math.min(minGz, gzS(x));
+    special.set('MODU-2', ge('MODU-2', 'Smallest righting lever between upright and the 2nd intercept', 'MODU Code 2009 3.4', 'm', 0, minGz));
+    special.get('MODU-2')!.passed = minGz > 0;
+  }
+
   const SPECIAL_SOURCE: Record<string, () => void> = {
+    'PAX-1': computePaxCrowd, 'PAX-2': computePaxTurn, 'GRAIN-1': computeGrain, 'GRAIN-2': computeGrain,
+    'PONT-1': computePontoon, 'PONT-2': computePontoon, 'MODU-1': computeModu, 'MODU-2': computeModu, 'CRANE-5': computeCrane,
     'OSV-1': computeOSV1, 'IS-2.3-HEEL': computeWeather, 'IS-2.3-AREA': computeWeather,
     'FIFI-1': computeFifi, 'CRANE-1': computeCrane, 'CRANE-2': computeCrane, 'CRANE-3': computeCrane, 'CRANE-4': computeCrane,
   };
@@ -502,7 +636,8 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
         list.push(r);
       } catch (e) {
         if (!(e instanceof EngineError)) throw e;
-        error = `This group could not be evaluated: ${e.message}`;
+        const msg = e.message.charAt(0).toUpperCase() + e.message.slice(1);
+        error = error ? (error.includes(msg) ? error : `${error} ${msg}`) : `This group could not be evaluated. ${msg}`;
       }
     }
     if (error && !warnings.some((w) => w.message === error)) warnings.push({ code: 'GROUP_NOT_EVALUATED', message: `${g.name}: ${error}` });
@@ -549,6 +684,10 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
           const um = userMoment(id);
           moments.push(um.result); arms.push(um.arm);
         }
+      }
+      for (const cr of list) {
+        const sm = specialMoment.get(cr.id ?? '');
+        if (sm && !moments.some((m) => m.id === sm.result.id)) { moments.push(sm.result); arms.push(sm.arm); }
       }
       for (const cr of list) {
         const id = allCriteria.find((x) => x.id === cr.id)?.params?.momentId;
