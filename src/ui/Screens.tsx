@@ -108,39 +108,6 @@ export function Dashboard({ vessel, cases, active, r, onOpen, onDuplicate, onCre
   );
 }
 
-export function Stability({ r }: { r: Results }) {
-  return (
-    <div className="stack">
-      <section className="panel">
-        <div className="panel-head"><h2>GZ curve</h2>
-          <span className="legend"><i className="l-gz" />GZ <i className="l-gm" />GM tangent <i className="l-flood" />Flooding angle</span>
-        </div>
-        <GzChart r={r} mode="plain" />
-        <p className="muted">
-          GM fluid {f(r.gmFluid, 3)} m · GZmax {f(r.gzMax, 3)} m at {f(r.gzMaxAngle, 1)}° ·
-          Angle of vanishing stability {r.avs !== null ? `${f(r.avs, 1)}°` : `> ${r.gzCurve[r.gzCurve.length - 1].heel}°`} ·
-          Flooding angle {f(r.floodAngle, 1)}° {r.floodOpening ? `(${r.floodOpening}, approximate method)` : ''} ·
-          Deck edge immersion {f(r.deckEdgeAngle, 1)}°
-        </p>
-        <p className="muted">Each stability group has its own diagram with its criteria marked: see <strong>Criteria</strong>.</p>
-      </section>
-      <section className="panel">
-        <div className="panel-head"><h2>GZ table</h2></div>
-        <div className="table-wrap">
-          <table className="grid">
-            <thead><tr><th className="num">Heel °</th><th className="num">KN m</th><th className="num">KG·sin φ m</th><th className="num">TCG·cos φ m</th><th className="num">GZ m</th></tr></thead>
-            <tbody>
-              {r.gzTable.map((p) => (
-                <tr key={p.heel}><td className="num">{p.heel}</td><td className="num">{f(p.kn, 3)}</td><td className="num">{f(p.kgSin, 3)}</td><td className="num">{f(p.tcgCos, 3)}</td><td className={`num ${p.gz < 0 ? 'fail-text' : ''}`}>{f(p.gz, 3)}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 export function Criteria({ r }: { r: Results }) {
   return (
     <div className="stack">
@@ -154,6 +121,25 @@ export function Criteria({ r }: { r: Results }) {
         {r.groups.length === 0 && <span className="fail-text">No stability group is selected for this load case. Select groups in the Load Case screen.</span>}
       </section>
       {r.groups.map((g) => <GroupSection key={g.id} g={g} r={r} />)}
+      <section className="panel">
+        <div className="panel-head"><h2>GZ table</h2></div>
+        <p className="muted small">
+          GM fluid {f(r.gmFluid, 3)} m · GZmax {f(r.gzMax, 3)} m at {f(r.gzMaxAngle, 1)}° ·
+          Angle of vanishing stability {r.avs !== null ? `${f(r.avs, 1)}°` : `> ${r.gzCurve[r.gzCurve.length - 1].heel}°`} ·
+          Flooding angle {f(r.floodAngle, 1)}° {r.floodOpening ? `(${r.floodOpening}, approximate method)` : ''} ·
+          Deck edge immersion {f(r.deckEdgeAngle, 1)}°
+        </p>
+        <div className="table-wrap">
+          <table className="grid">
+            <thead><tr><th className="num">Heel °</th><th className="num">KN m</th><th className="num">KG·sin φ m</th><th className="num">TCG·cos φ m</th><th className="num">GZ m</th></tr></thead>
+            <tbody>
+              {r.gzTable.map((p) => (
+                <tr key={p.heel}><td className="num">{p.heel}</td><td className="num">{f(p.kn, 3)}</td><td className="num">{f(p.kgSin, 3)}</td><td className="num">{f(p.tcgCos, 3)}</td><td className={`num ${p.gz < 0 ? 'fail-text' : ''}`}>{f(p.gz, 3)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
       {r.warnings.length > 0 && (
         <section className="panel">
           <div className="panel-head"><h2>Warnings</h2></div>

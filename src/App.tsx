@@ -5,15 +5,14 @@ import { EngineError } from './engine/math';
 import type { Results } from './engine/types';
 import { useLoadCases } from './store';
 import { LoadCaseEditor } from './ui/LoadCaseEditor';
-import { Criteria, Dashboard, ResultsSidebar, Stability, VesselData } from './ui/Screens';
+import { Criteria, Dashboard, ResultsSidebar, VesselData } from './ui/Screens';
 
-type Screen = 'dashboard' | 'loadcase' | 'stability' | 'criteria' | 'vessel';
+type Screen = 'dashboard' | 'loadcase' | 'criteria' | 'vessel';
 const NAV: { id: Screen; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '▣' },
   { id: 'vessel', label: 'Vessel Database', icon: '⛴' },
   { id: 'loadcase', label: 'Load Case', icon: '☰' },
-  { id: 'stability', label: 'Stability', icon: '∠' },
-  { id: 'criteria', label: 'Criteria', icon: '✓' },
+  { id: 'criteria', label: 'Stability Criteria', icon: '✓' },
 ];
 
 export default function App() {
@@ -83,7 +82,6 @@ export default function App() {
               onDuplicate={store.duplicate} onCreate={store.create} onRemove={store.remove} />
           )}
           {screen === 'loadcase' && <LoadCaseEditor vessel={vessel} lc={lc} r={r} onChange={store.update} />}
-          {screen === 'stability' && (r ? <Stability r={r} /> : <div className="error-box">{error}</div>)}
           {screen === 'criteria' && (r ? <Criteria r={r} /> : <div className="error-box">{error}</div>)}
           {screen === 'vessel' && <VesselData vessel={vessel} />}
         </div>
