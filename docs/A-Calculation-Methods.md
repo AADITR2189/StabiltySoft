@@ -53,7 +53,7 @@ Display rounding never affects stored or computed values. The engine works in IE
 | Data | Independent variable(s) | Default method | Allowed alternatives |
 |---|---|---|---|
 | Hydrostatic table | Draft (and trim, if trimmed tables exist) | Linear (bilinear with trim) | Monotone cubic (PCHIP) in draft |
-| KN cross curves | Displacement/volume × heel angle (× trim) | Linear in volume; PCHIP in angle | Linear in angle |
+| KN cross curves | Displacement/volume × heel angle (× trim) | PCHIP in displacement; PCHIP in angle | Linear in either |
 | Tank calibration | Sounding/ullage → volume; volume → centroids, FSM (× trim, × heel) | Linear | — |
 | Windage table | Draft | Linear | — |
 | IMO tables (X1, X2, k, s) | Per table | **Linear** (per IS Code explanatory notes) | none |
@@ -62,6 +62,7 @@ Rules:
 1. **No extrapolation.** A value outside a table's range raises a blocking `OUT_OF_TABLE_RANGE` error that names the table, the variable and the limits. The engine never silently clamps.
 2. The interpolation method and the table version are written into every `CalculationRun` record, so any result can be reproduced.
 3. Tables must be strictly monotonic in their independent variable. This is checked at verification time.
+4. **Accuracy depends on table spacing.** Engine tests on an exact box-hull reference show that, with KN tabulated every 0.5 m draft and every 5° (10° above 50°), GZ is reproduced within 3 mm at tabulated angles and within 7 mm between angles up to 50°. Between 50° and 60° the error grows to about 15 mm. Linear interpolation across displacement gave errors up to 8 mm even at tabulated angles, which is why PCHIP is the default. **Recommendation for vessel data preparation:** KN at 5° steps up to at least 60°, and draft steps of 0.5 m or finer.
 
 ---
 
@@ -105,7 +106,7 @@ FSM  = i_T(V) · ρ_liquid                        (if inertia stored)
 
 Validation:
 - V ≤ V₁₀₀, otherwise a blocking error.
-- V > 98% V₁₀₀ gives a warning (expansion margin). The threshold is configurable.
+- 98% < V < 100% V₁₀₀ gives a warning (expansion margin). The threshold is configurable. Tanks pressed up to exactly 100% are normal practice and are not warned.
 - Sounding outside the table range gives a blocking error.
 - Every tank row shows the input mode used, so the source of each number is clear.
 
@@ -244,7 +245,7 @@ The deck-edge immersion angle (needed for the Weather Criterion θ₀ limit) use
 | IS-2.2.4 | Initial metacentric height GM₀ (GM_fluid) | ≥ 0.15 m |
 
 Implementation notes:
-- Areas are measured from 0° (upright), as the code defines. If φ_eq ≠ 0 because of TCG, the report also shows the areas measured from φ_eq for information.
+- Areas are measured from 0° (upright), as the code defines. If θ_f < 30°, the 0–30° area is evaluated to θ_f. If φ_eq ≠ 0 because of TCG, the report also shows the areas measured from φ_eq for information.
 - IS-2.2.2 is evaluated as max GZ over [30°, θ_limit], where θ_limit is the end of the curve or θ_f (configurable per criteria set; the default follows the explanatory notes adopted by the project's naval architect).
 - If θ_f < 30°, the 0–30° area criterion is evaluated per the criteria-set configuration and flagged `DOWNFLOODING_BELOW_30` for engineering review.
 
@@ -275,6 +276,8 @@ r  = 0.73 + 0.6 · OG / d,      OG = KG − d   (positive if G above waterline)
 T_roll = 2 · C · B / √GM                    [s]
 C  = 0.373 + 0.023 · (B/d) − 0.043 · (L_WL/100)
 ```
+
+OG is computed with KG corrected for free surface (KG_fluid). This is the conservative choice: a higher G gives a larger roll angle θ₁. It must be confirmed by the reviewing naval architect.
 
 where B = moulded breadth, d = mean moulded draught, L_WL = waterline length, C_B = block coefficient, GM = GM_fluid, and A_k = total overall area of bilge keels or area of lateral projection of bar keel, or the sum of these (m²).
 

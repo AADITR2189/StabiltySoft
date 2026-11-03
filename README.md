@@ -4,7 +4,7 @@
 
 It is delivered first as a **Progressive Web App (PWA)**: it runs in a web browser, can be installed like an app and works **offline onboard**. Later it can be packaged as a desktop or mobile application without being rewritten.
 
-> **Status:** Design phase. This repository currently contains the complete design package. No application code has been written yet.
+> **Status:** Early working version (v0.1). The calculation engine and first screens run in the browser and work offline. They use a **demo vessel** (a box-shaped barge with exactly calculable data) until real vessel data is loaded. See [What works now](#what-works-now).
 
 ---
 
@@ -35,9 +35,37 @@ The current Excel-based stability assessments cause:
 | 6 | [Technology Recommendation](docs/06-Technology-Recommendation.md) | *Which tools and why?* |
 | A | [Appendix A: Calculation Methods](docs/A-Calculation-Methods.md) | *Which formulas, exactly?* (the naval architecture reference) |
 
+**Providing vessel data:** see the [Vessel Data Checklist](docs/DATA-CHECKLIST.md).
+
 **Suggested reading order for non-technical readers:** this README, then the PRD, then the UI/UX Specification, then the Roadmap.
 
 ---
+
+## What works now
+
+| Feature | Status |
+|---|---|
+| Calculation engine: displacement, drafts, trim, heel, KG, GM, free surface, GZ curve | ✅ Working, 28 automatic tests against exact geometry |
+| IMO IS Code 2008 general criteria (§2.2) + Weather Criterion (§2.3), with margins and failure explanations | ✅ Working |
+| Load case editor: tanks by Filled / % / Volume / Weight / Sounding, variable weights, live results | ✅ Working |
+| Multiple load cases: create, duplicate, delete (saved in the browser) | ✅ Working |
+| GZ curve chart, GZ table, weather criterion chart and details | ✅ Working |
+| Dark and light themes, installable, offline | ✅ Working |
+| Real vessel data | ⏳ Waiting for data: see the [Vessel Data Checklist](docs/DATA-CHECKLIST.md) |
+| Import (Excel / CSV / PDF / Word) with verification | ⏳ Next |
+| Reports (PDF / Excel) | ⏳ Next |
+| Hydrostatics / tanks editors, compare load cases, settings | ⏳ Planned |
+
+### For developers: running it
+
+```bash
+npm install
+npm run dev      # start locally at http://localhost:5173
+npm test         # run the engine tests
+npm run build    # production build in dist/
+```
+
+Code layout: `src/engine/` is the calculation engine (pure TypeScript, no UI), `src/data/` holds vessel data, `src/ui/` holds the screens and `tests/` the engine verification tests.
 
 ## Phase 1 scope in one paragraph
 
