@@ -244,7 +244,7 @@ function OperationPanel({ lc, vessel, set }: { lc: LoadCase; vessel: Vessel; set
   const modu = ops.modu ?? { unitType: 'SURFACE' as const, windSpeed: 36, coefficient: 1.0 };
   const lift = ops.lifting ?? { exposed: false, hs: 0 };
   const show = {
-    wx: has('IS2008_WEATHER', 'IMO_A749'), pax: has('IS2008_PAX'), grain: has('GRAIN'), modu: has('MODU'),
+    wx: has('IS2008_WEATHER', 'IMO_A749', 'IMO_A562'), pax: has('IS2008_PAX'), grain: has('GRAIN'), modu: has('MODU'),
     lift: has('LIFT_293', 'LIFT_295', 'LIFT_297', 'LIFT_297_LOSS'), liftAlt: has('LIFT_297', 'LIFT_297_LOSS'), hook: has('LIFT_295', 'LIFT_297_LOSS'),
     ah: has('ANCHOR_HANDLING'), tow: has('TOWING'), esc: has('ESCORT'),
   };

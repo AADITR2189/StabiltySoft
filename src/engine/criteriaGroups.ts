@@ -59,6 +59,9 @@ export const BUILTIN_CRITERIA: CriterionDef[] = [
   { id: 'LIFT-A1', name: 'Alternative method: residual area φe to 40° or max residual angle ≥ 0.080 (exposed) / 0.053 m·rad', kind: 'SPECIAL', comparator: '>=', required: 0.08, regulation: 'IS 2008 B 2.9.7.1.1' },
   { id: 'LIFT-A2', name: 'Alternative method: equilibrium heel ≤ 10°, deck immersion angle or lifting appliance limit (least)', kind: 'SPECIAL', comparator: '<=', required: 10, regulation: 'IS 2008 B 2.9.7.1.2' },
   { id: 'LIFT-A3', name: 'Alternative method, sudden loss of hook load: Area 2 − Area 1 > K (0.037 exposed / 0)', kind: 'SPECIAL', comparator: '>=', required: 0, regulation: 'IS 2008 B 2.9.7.2' },
+  // IMO A.562(14), 1985 (superseded weather criterion)
+  { id: 'A562-HEEL', name: 'Steady wind heel θ₀ ≤ 16° or 0.8 × deck edge angle (guide value)', kind: 'SPECIAL', comparator: '<=', required: 16, regulation: 'IMO A.562(14) 2.1.2' },
+  { id: 'A562-AREA', name: 'Weather criterion (A.562): area b ≥ area a, P = 0.0514 t/m²', kind: 'SPECIAL', comparator: '>=', required: 0, regulation: 'IMO A.562(14) 2.1.4' },
   // IMO A.167(ES.IV), 1968 (superseded)
   { id: 'A167-1', name: 'Area under GZ curve 0° to 30°', kind: 'AREA', comparator: '>=', required: 0.055, params: { from: 0, to: 30, capAtFlood: true }, regulation: 'IMO A.167(ES.IV)' },
   { id: 'A167-2', name: 'Area under GZ curve 0° to 40° or θf', kind: 'AREA', comparator: '>=', required: 0.09, params: { from: 0, to: 40, capAtFlood: true }, regulation: 'IMO A.167(ES.IV)' },
@@ -153,6 +156,11 @@ export const BUILTIN_GROUPS: GroupDef[] = [
     id: 'IMO_A167', name: 'IMO A.167(ES.IV), 1968 (superseded)', regulation: 'IMO Res. A.167(ES.IV)',
     description: 'Original general intact criteria, for existing ships approved under this resolution and for comparison.',
     chart: 'GENERAL', criterionIds: ['A167-1', 'A167-2', 'A167-3', 'A167-4', 'A167-5', 'A167-6'],
+  },
+  {
+    id: 'IMO_A562', name: 'IMO A.562(14) Weather Criterion, 1985 (superseded)', regulation: 'IMO Res. A.562(14)',
+    description: 'Original severe wind and rolling criterion: P = 0.0514 t/m² (504.2 N/m²); the θ₀ limit of 16° / 80 % deck-edge angle is a guide value. Use with IMO A.167 for ships approved under these resolutions.',
+    chart: 'WEATHER', criterionIds: ['A562-HEEL', 'A562-AREA'],
   },
   {
     id: 'IMO_A749', name: 'IMO A.749(18) IS Code 1993 (superseded)', regulation: 'IMO Res. A.749(18) as amended by MSC.75(69)',

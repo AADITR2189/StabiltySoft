@@ -390,12 +390,16 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     special.set('OSV-1', r);
   }
 
-  function computeWeather() {
+  function computeWeather() { weatherVariant('IS'); }
+  function computeWeatherA562() { weatherVariant('A562'); }
+  /** IS Code 2008 A 2.3, or the original IMO A.562(14) (P = 0.0514 t/m², θ0 limit as a guide value). */
+  function weatherVariant(variant: 'IS' | 'A562') {
     const { A, hA, hU } = windTable();
     const d = draftMean;
     const Z = hA - hU;
-    const P = lc.ops?.windPressure ?? WIND_P;
-    if (P < WIND_P) warnings.push({ code: 'REDUCED_WIND_PRESSURE', message: `Reduced wind pressure ${P} N/m² used for the weather criterion: allowed only for restricted service with Administration approval.` });
+    const baseP = variant === 'A562' ? 0.0514 * 1000 * G : WIND_P; // A.562: 0.0514 t/m² = 504.2 N/m²
+    const P = lc.ops?.windPressure ?? baseP;
+    if (P < baseP && !warnings.some((w) => w.code === 'REDUCED_WIND_PRESSURE')) warnings.push({ code: 'REDUCED_WIND_PRESSURE', message: `Reduced wind pressure ${P} N/m² used for the weather criterion: allowed only for restricted service with Administration approval.` });
     const lw1 = (P * A * Z) / (1000 * G * disp);
     const lw2 = 1.5 * lw1;
     const B = vessel.breadth;
@@ -435,13 +439,18 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
       areaB = theta2 > thetaX ? integrateDeg((x) => gzS(x) - lw2, thetaX, theta2) : 0;
     }
     const heelLimit = Math.min(16, 0.8 * deckEdgeAngle);
-    special.set('IS-2.3-HEEL', le('IS-2.3-HEEL', `Steady wind heel θ₀ ≤ ${heelLimit < 16 ? '0.8 × deck edge angle' : '16°'}`, 'IS Code 2008 A 2.3.1', '°', heelLimit, theta0));
-    const areaCrit = ge('IS-2.3-AREA', 'Weather criterion: area b ≥ area a', 'IS Code 2008 A 2.3.1', 'm·rad', areaA, areaB);
+    const idH = variant === 'A562' ? 'A562-HEEL' : 'IS-2.3-HEEL', idA = variant === 'A562' ? 'A562-AREA' : 'IS-2.3-AREA';
+    const reg = variant === 'A562' ? 'IMO A.562(14) 2.1' : 'IS Code 2008 A 2.3.1';
+    special.set(idH, le(idH, variant === 'A562'
+      ? `Steady wind heel θ₀ ≤ ${heelLimit < 16 ? '0.8 × deck edge angle' : '16°'} (guide value, to the satisfaction of the Administration)`
+      : `Steady wind heel θ₀ ≤ ${heelLimit < 16 ? '0.8 × deck edge angle' : '16°'}`, variant === 'A562' ? 'IMO A.562(14) 2.1.2 footnote' : reg, '°', heelLimit, theta0));
+    const areaCrit = ge(idA, `Weather criterion: area b ≥ area a${variant === 'A562' ? ` (P = 0.0514 t/m²)` : ''}`, reg, 'm·rad', areaA, areaB);
     if (thetaX === null) {
       areaCrit.passed = false;
       areaCrit.explanation = 'The gust wind heeling lever exceeds the maximum righting lever: the ship cannot resist the gust.';
     }
-    special.set('IS-2.3-AREA', areaCrit);
+    special.set(idA, areaCrit);
+    if (variant === 'A562' && weather) return; // the IS Code 2008 weather details are already shown
     weather = {
       P, A, Z, hA, lw1, lw2, Bd, Cb: cb, X1, X2, k, r, OG, C, Troll, s,
       theta0, theta1, thetaR, thetaX, thetaC, theta2, areaA, areaB, deckEdgeAngle, side,
@@ -793,6 +802,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     'PAX-1': computePaxCrowd, 'PAX-2': computePaxTurn, 'GRAIN-1': computeGrain, 'GRAIN-2': computeGrain,
     'PONT-1': computePontoon, 'PONT-2': computePontoon, 'MODU-1': computeModu, 'MODU-2': computeModu, 'CRANE-5': computeCrane,
     'OSV-1': computeOSV1, 'IS-2.3-HEEL': computeWeather, 'IS-2.3-AREA': computeWeather,
+    'A562-HEEL': computeWeatherA562, 'A562-AREA': computeWeatherA562,
     'FIFI-1': computeFifi, 'CRANE-1': computeCrane, 'CRANE-2': computeCrane, 'CRANE-3': computeCrane, 'CRANE-4': computeCrane,
   };
   const specialErrors = new Map<() => void, string>();

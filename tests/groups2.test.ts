@@ -128,3 +128,17 @@ describe('DDS 079-1 style ratio criteria (user moment)', () => {
     expect(g.criteria[1].actual).toBeGreaterThan(1);
   });
 });
+
+describe('IMO A.562(14) weather criterion (1985)', () => {
+  it('P = 0.0514 t/m²: wind lever = IS 2008 lever × (0.0514·9.81·1000 / 504); same θ1; θ0 limit is a guide value', () => {
+    const r = calculate(demoVessel, base(['IS2008_WEATHER', 'IMO_A562']));
+    const is = r.groups[0], a = r.groups[1];
+    expect(a.criteria.map((c) => c.code)).toEqual(['A562-HEEL', 'A562-AREA']);
+    expect(a.criteria[0].description).toMatch(/guide value/);
+    const lwIS = is.moments[1].rows[0].arm;             // steady lever, IS 2008
+    const solo = calculate(demoVessel, base(['IMO_A562']));
+    expect(solo.weather!.lw1).toBeCloseTo(lwIS * (0.0514 * 9.81 * 1000) / 504, 12);
+    expect(solo.weather!.theta1).toBeCloseTo(r.weather!.theta1, 12);
+    expect(Math.abs(a.criteria[1].actual - is.criteria[1].actual)).toBeLessThan(0.001);
+  });
+});

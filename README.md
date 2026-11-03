@@ -57,7 +57,8 @@ The current Excel-based stability assessments cause:
 | Several moments connected to a group: combined heeling moment = sum; criteria can use the group's combined moment; groups can be edited | ✅ Working |
 | Catalogue round 1: Passenger ships (crowding, turning), Grain Code, Pontoons, MODU, Lifting 2.9.3 freeboard, reduced wind pressure, IMO A.167 / A.749, DDS 079-1 style ratio criteria; operation data per load case; edit user criteria | ✅ Working |
 | MSC.415(97): anchor handling (2.7) with permissible tension table, towing self/tow-tripping (2.8), escort (2.8.4.4), lifting loss of hook load (2.9.5), alternative method (2.9.6/2.9.7), lifting threshold (2.9.1.2) | ✅ Working (source: docs/regulations) |
-| MODU column-stabilised alternative, A.562, 46 CFR, DDS 079-1 extras, class notations | ⏳ Waiting for rule text |
+| IMO A.562(14) weather criterion (1985): P = 0.0514 t/m², θ0 limit as guide value | ✅ Working (source: docs/regulations) |
+| MODU column-stabilised alternative, 46 CFR, DDS 079-1 extras, class notations | ⏳ Waiting for rule text |
 | Dashboard: general particulars + summary table of all load cases (add, open, duplicate, delete) | ✅ Working |
 | MARSOL SPLENDOR loaded from the booklet, all 13 booklet conditions benchmarked | ✅ Working (data not yet verified) |
 | Single colour theme (Powder Blue / White / Racing Orange), contrast-checked, installable, offline | ✅ Working |

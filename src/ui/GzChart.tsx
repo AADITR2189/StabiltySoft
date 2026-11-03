@@ -139,13 +139,13 @@ export function GzChart({ r, mode = 'plain', criteria = [] }: { r: Results; mode
           <line x1={sx(xMin)} x2={sx(xMax)} y1={sy(w.lw2)} y2={sy(w.lw2)} className="wind2" />
           <text x={sx(xMax) - 4} y={sy(w.lw2) - 5} textAnchor="end" className="tick">{`l_w2 (gust) ${w.lw2.toFixed(4)} m`}</text>
           {vline(w.thetaR, 'ref', `θ0−θ1 = ${w.thetaR.toFixed(1)}°`, 0)}
-          {vline(w.theta0, 'ref', `θ0 = ${w.theta0.toFixed(1)}°${mark(critOf('IS-2.3-HEEL'))}`, 1)}
+          {vline(w.theta0, 'ref', `θ0 = ${w.theta0.toFixed(1)}°${mark(critOf('IS-2.3-HEEL') ?? critOf('A562-HEEL'))}`, 1)}
           {vline(w.theta2, 'ref', `θ2 = ${w.theta2.toFixed(1)}°`, 2)}
           {w.thetaX !== null && (
             <>
               <text x={sx((w.thetaR + w.thetaX) / 2)} y={sy(w.lw2) - 8} textAnchor="middle" className="area-label">{`a = ${w.areaA.toFixed(4)}`}</text>
               <text x={sx((w.thetaX + w.theta2) / 2)} y={sy((gzAt((w.thetaX + w.theta2) / 2) + w.lw2) / 2)} textAnchor="middle" className="area-label">
-                {`b = ${w.areaB.toFixed(4)}${mark(critOf('IS-2.3-AREA'))}`}
+                {`b = ${w.areaB.toFixed(4)}${mark(critOf('IS-2.3-AREA') ?? critOf('A562-AREA'))}`}
               </text>
             </>
           )}
