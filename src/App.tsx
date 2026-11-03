@@ -22,7 +22,8 @@ export default function App() {
   const lc = store.active;
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    try { return (localStorage.getItem('stabilitysoft.theme') as 'dark' | 'light') ?? 'dark'; } catch { return 'dark'; }
+    const sys = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    try { return (localStorage.getItem('stabilitysoft.theme') as 'dark' | 'light') ?? sys; } catch { return sys; }
   });
   const [online, setOnline] = useState(navigator.onLine);
 

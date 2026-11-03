@@ -59,7 +59,7 @@ input.wide { width: 100%; min-width: 180px; }
   grid-template-columns: 220px 1fr;
   grid-template-rows: 48px 1fr 28px;
   grid-template-areas: 'top top' 'nav main' 'status status';
-  height: 100vh;
+  height: 100%;
 }
 .topbar {
   grid-area: top;
