@@ -2,7 +2,7 @@
 // Phase 1 MVP: localStorage. Planned: IndexedDB + sync (see docs/03-System-Architecture.md §10).
 import { useEffect, useState } from 'react';
 import { VESSELS } from './data/vessels';
-import type { CriteriaLibrary, CriterionDef, GroupDef, LoadCase, Vessel } from './engine/types';
+import type { CriteriaLibrary, CriterionDef, GroupDef, LoadCase, MomentDef, Vessel } from './engine/types';
 
 const KEY = 'stabilitysoft.loadcases.v3';
 const ACTIVE = 'stabilitysoft.active.v3';
@@ -105,5 +105,10 @@ export function useLibrary() {
     })),
     saveGroup: (g: GroupDef) => setLib((l) => ({ ...l, groups: l.groups.some((x) => x.id === g.id) ? l.groups.map((x) => (x.id === g.id ? g : x)) : [...l.groups, g] })),
     removeGroup: (id: string) => setLib((l) => ({ ...l, groups: l.groups.filter((g) => g.id !== id) })),
+    saveMoment: (m: MomentDef) => setLib((l) => {
+      const ms = l.moments ?? [];
+      return { ...l, moments: ms.some((x) => x.id === m.id) ? ms.map((x) => (x.id === m.id ? m : x)) : [...ms, m] };
+    }),
+    removeMoment: (id: string) => setLib((l) => ({ ...l, moments: (l.moments ?? []).filter((m) => m.id !== id) })),
   };
 }

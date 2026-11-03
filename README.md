@@ -52,6 +52,8 @@ The current Excel-based stability assessments cause:
 | GZ curve chart, GZ table, weather criterion chart and details | ✅ Working |
 | Stability groups: IS Code 2008 General, OSV intact, Weather, BV Fire-fighting, Crane operation (IS Code B 2.9) | ✅ Working, each with its own GZ diagram |
 | Criteria Library: create own intact criteria and build own groups by clicking criteria | ✅ Working |
+| Heeling moments from user formulas: click each symbol to link it to the load case (Δ, drafts, VCB, KG, TCG, GM, heel angle θ …) or enter a value; heeling arm = M / Δ; moment criteria (heel at equilibrium, residual area, residual arm) | ✅ Working |
+| GZ table and moment calculation tables for every stability group | ✅ Working |
 | Dashboard: general particulars + summary table of all load cases (add, open, duplicate, delete) | ✅ Working |
 | MARSOL SPLENDOR loaded from the booklet, all 13 booklet conditions benchmarked | ✅ Working (data not yet verified) |
 | Single colour theme (Powder Blue / White / Racing Orange), contrast-checked, installable, offline | ✅ Working |

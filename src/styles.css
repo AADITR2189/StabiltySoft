@@ -248,3 +248,23 @@ button.danger { background: var(--fail); color: var(--on-accent); }
 .chart .area-3 { fill: rgba(255, 210, 63, 0.22); }
 .chart .area-4 { fill: rgba(74, 222, 128, 0.20); }
 .grid.summary td:first-child { min-width: 240px; white-space: normal; }
+
+/* moments */
+.mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.formula-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); margin-top: 12px; }
+.formula-field input { font-size: 15px; padding: 8px 10px; color: var(--text); }
+button.tiny { font-size: 12px; padding: 1px 8px; margin: 2px 4px 2px 0; }
+.symbol-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+.symbol { display: flex; flex-direction: column; align-items: flex-start; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); padding: 6px 10px; font-weight: 400; min-width: 90px; }
+.symbol .mono { font-size: 16px; font-weight: 700; color: var(--powder); }
+.symbol.on { border-color: var(--accent); }
+.symbol.missing { border-color: var(--warn); }
+.symbol.missing .small { color: var(--warn); }
+.symbol-edit { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; border: 1px solid var(--accent); border-radius: 6px; padding: 10px 12px; margin: 6px 0 10px; }
+.symbol-edit label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.symbol-edit strong { font-size: 18px; color: var(--accent-text); }
+.calc-box { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 8px 0; background: var(--surface-2); }
+.calc-box .panel-head { grid-column: 1 / -1; margin: 0; }
+.small-h { margin: 0; font-size: 13px; color: var(--powder); }
+.group-tables { display: flex; flex-direction: column; gap: 4px; }
+.calc-box .grid td.num { white-space: nowrap; }

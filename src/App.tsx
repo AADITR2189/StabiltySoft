@@ -81,7 +81,7 @@ export default function App() {
               onDuplicate={store.duplicate} onCreate={store.create} onRemove={store.remove} />
           )}
           {screen === 'loadcase' && <LoadCaseEditor vessel={vessel} lc={lc} r={r} onChange={store.update} customGroups={library.lib.groups} />}
-          {screen === 'library' && <CriteriaLibraryScreen {...library} />}
+          {screen === 'library' && <CriteriaLibraryScreen {...library} preview={r} lcName={lc.name} />}
           {screen === 'criteria' && (r ? <Criteria r={r} /> : <div className="error-box">{error}</div>)}
           {screen === 'vessel' && <VesselData vessel={vessel} status={status} source={store.entry.source} />}
         </div>

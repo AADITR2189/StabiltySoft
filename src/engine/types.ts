@@ -183,7 +183,9 @@ export interface GzPoint {
 export type CriterionViz =
   | { type: 'area'; from: number; to: number }
   | { type: 'hline'; value: number; from: number; label: string }
-  | { type: 'vline'; angle: number; label: string };
+  | { type: 'vline'; angle: number; label: string }
+  | { type: 'arm'; label: string; points: { heel: number; arm: number }[] }
+  | { type: 'residArea'; from: number; to: number; points: { heel: number; arm: number }[] };
 
 export interface CriterionResult {
   /** id of the criterion definition */
@@ -213,6 +215,9 @@ export type CriterionKind =
   | 'GM'            // initial metacentric height (corrected for free surface)
   | 'RANGE'         // range of positive stability (AVS − static heel)
   | 'HEEL'          // static heel angle
+  | 'HEEL_MOMENT'   // equilibrium heel under a user-defined heeling moment
+  | 'RESID_AREA'    // residual area (GZ − heeling arm) from equilibrium to an angle
+  | 'RESID_GZMAX'   // largest residual arm (GZ − heeling arm)
   | 'SPECIAL';      // engine-defined (OSV area rule, weather, fire-fighting, crane)
 
 export interface CriterionDef {
@@ -221,7 +226,7 @@ export interface CriterionDef {
   kind: CriterionKind;
   comparator: '>=' | '<=';
   required: number;
-  params?: { from?: number; to?: number; angle?: number; capAtFlood?: boolean };
+  params?: { from?: number; to?: number; angle?: number; capAtFlood?: boolean; momentId?: string };
   regulation?: string;
   builtin?: boolean;
 }
@@ -236,9 +241,49 @@ export interface GroupDef {
   builtin?: boolean;
 }
 
+/** Load case values a formula symbol can be linked to. HEEL = θ, the heel angle of each GZ point. */
+export type MomentSource =
+  | 'VALUE' | 'HEEL' | 'DISPLACEMENT' | 'DRAFT_MS' | 'DRAFT_MEAN' | 'DRAFT_AP' | 'DRAFT_FP'
+  | 'KG' | 'KG_FLUID' | 'VCB' | 'TCG' | 'LCG' | 'GM' | 'KM' | 'TRIM' | 'STATIC_HEEL';
+
+export interface MomentVar {
+  name: string;          // symbol as written in the formula
+  source: MomentSource;
+  value?: number;        // when source = VALUE
+  unit?: string;
+  description?: string;
+}
+
+export interface MomentDef {
+  id: string;
+  name: string;
+  formula: string;
+  /** MOMENT: formula gives t·m, heeling arm = M / Δ. ARM: formula gives the heeling arm in m. */
+  result: 'MOMENT' | 'ARM';
+  vars: MomentVar[];
+  description?: string;
+}
+
 export interface CriteriaLibrary {
   criteria: CriterionDef[];
   groups: GroupDef[];
+  moments?: MomentDef[];
+}
+
+/** A heeling moment as calculated for one load case: inputs used and a table over heel angles. */
+export interface MomentResult {
+  id: string;
+  name: string;
+  formula: string;
+  inputs: { name: string; source: string; value: number | null; unit: string }[];
+  rows: { heel: number; moment: number | null; arm: number }[];
+  note?: string;
+}
+
+export interface GroupTableRow {
+  heel: number; kn: number; kgSin: number; tcgCos: number; gz: number;
+  arms: number[];       // heeling arm of each moment in group.moments, same order
+  residual: number | null;  // GZ − first heeling arm
 }
 
 export interface FifiDetail {
@@ -261,6 +306,10 @@ export interface CriteriaGroupResult {
   passed: boolean;
   /** Set when the group could not be evaluated (the group then fails). */
   error?: string;
+  /** Heeling moments / levers used by this group (with their calculation tables). */
+  moments: MomentResult[];
+  /** GZ table for this group, with heeling and residual arms where a moment applies. */
+  table: GroupTableRow[];
 }
 
 export interface WeatherDetail {
@@ -295,6 +344,8 @@ export interface Results {
   lcb: number;
   lcf: number;
   kmt: number;
+  /** VCB (KB) if the hydrostatic tables provide it */
+  kb: number | null;
   mtc: number;
   tpc: number;
   gmSolid: number;

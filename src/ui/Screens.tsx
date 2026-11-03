@@ -136,25 +136,6 @@ export function Criteria({ r }: { r: Results }) {
         {r.groups.length === 0 && <span className="fail-text">No stability group is selected for this load case. Select groups in the Load Case screen.</span>}
       </section>
       {r.groups.map((g) => <GroupSection key={g.id} g={g} r={r} />)}
-      <section className="panel">
-        <div className="panel-head"><h2>GZ table</h2></div>
-        <p className="muted small">
-          GM fluid {f(r.gmFluid, 3)} m · GZmax {f(r.gzMax, 3)} m at {f(r.gzMaxAngle, 1)}° ·
-          Angle of vanishing stability {r.avs !== null ? `${f(r.avs, 1)}°` : `> ${r.gzCurve[r.gzCurve.length - 1].heel}°`} ·
-          Flooding angle {f(r.floodAngle, 1)}° {r.floodOpening ? `(${r.floodOpening}, approximate method)` : ''} ·
-          Deck edge immersion {f(r.deckEdgeAngle, 1)}°
-        </p>
-        <div className="table-wrap">
-          <table className="grid">
-            <thead><tr><th className="num">Heel °</th><th className="num">KN m</th><th className="num">KG·sin φ m</th><th className="num">TCG·cos φ m</th><th className="num">GZ m</th></tr></thead>
-            <tbody>
-              {r.gzTable.map((p) => (
-                <tr key={p.heel}><td className="num">{p.heel}</td><td className="num">{f(p.kn, 3)}</td><td className="num">{f(p.kgSin, 3)}</td><td className="num">{f(p.tcgCos, 3)}</td><td className={`num ${p.gz < 0 ? 'fail-text' : ''}`}>{f(p.gz, 3)}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
       {r.warnings.length > 0 && (
         <section className="panel">
           <div className="panel-head"><h2>Warnings</h2></div>
@@ -199,6 +180,7 @@ function GroupSection({ g, r }: { g: CriteriaGroupResult; r: Results }) {
           <tbody>{g.criteria.map((c) => <CritRow key={c.code} c={c} />)}</tbody>
         </table>
       </div>
+      <GroupTables g={g} side={r.side} />
       {g.chart === 'WEATHER' && w && (
         <details className="calc-details">
           <summary>Weather criterion calculation details</summary>
@@ -335,6 +317,57 @@ export function VesselData({ vessel, status, source }: { vessel: Vessel; status:
           <tbody>{vessel.tanks.map((t) => <tr key={t.id}><td><span className={`dot g-${t.group}`} />{t.name}</td><td>{t.group.replace('_', ' ')}</td><td className="num">{f(t.capacity, 1)}</td><td className="num">{f(t.density, 3)}</td><td>{t.isConsumable ? 'Yes' : 'No'}</td><td className="num">{t.calibration.length}</td></tr>)}</tbody>
         </table>
       </section>
+    </div>
+  );
+}
+
+/** GZ table of one group (with heeling and residual arms) and the calculation of each moment. */
+function GroupTables({ g, side }: { g: CriteriaGroupResult; side: 1 | -1 }) {
+  if (g.error || !g.table.length) return null;
+  const hasArms = g.moments.length > 0;
+  return (
+    <div className="group-tables">
+      <details className="calc-details" open>
+        <summary>GZ table: {g.name}{side < 0 ? ' (heel to port)' : ''}</summary>
+        <div className="table-wrap">
+          <table className="grid">
+            <thead>
+              <tr>
+                <th className="num">Heel °</th><th className="num">KN m</th><th className="num">KG·sin φ m</th><th className="num">TCG·cos φ m</th><th className="num">GZ m</th>
+                {g.moments.map((m) => <th key={m.id} className="num wrap">Heeling arm m<div className="muted small">{m.name}</div></th>)}
+                {hasArms && <th className="num">Residual arm m<div className="muted small">GZ − {g.moments[0].name.split(' ').slice(0, 3).join(' ')}</div></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {g.table.map((t) => (
+                <tr key={t.heel}>
+                  <td className="num">{t.heel}</td><td className="num">{f(t.kn, 3)}</td><td className="num">{f(t.kgSin, 3)}</td><td className="num">{f(t.tcgCos, 3)}</td>
+                  <td className={`num ${t.gz < 0 ? 'fail-text' : ''}`}>{f(t.gz, 3)}</td>
+                  {t.arms.map((a, i) => <td key={i} className="num">{f(a, 4)}</td>)}
+                  {t.residual !== null && <td className={`num ${t.residual < 0 ? 'fail-text' : ''}`}>{f(t.residual, 3)}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      {g.moments.map((m) => (
+        <details key={m.id} className="calc-details">
+          <summary>Moment calculation: {m.name}</summary>
+          <p className="mono small">{m.formula}</p>
+          {m.inputs.length > 0 && (
+            <table className="grid">
+              <thead><tr><th>Symbol</th><th>Taken from</th><th className="num">Value</th></tr></thead>
+              <tbody>{m.inputs.map((i) => <tr key={i.name}><td className="mono">{i.name}</td><td>{i.source}</td><td className="num">{i.value === null ? 'each angle θ' : `${f(i.value, 4)} ${i.unit}`}</td></tr>)}</tbody>
+            </table>
+          )}
+          {m.note && <p className="muted small">{m.note}</p>}
+          <table className="grid">
+            <thead><tr><th className="num">Heel θ °</th><th className="num">Moment t·m</th><th className="num">Heeling arm m</th></tr></thead>
+            <tbody>{m.rows.map((x) => <tr key={x.heel}><td className="num">{x.heel}</td><td className="num">{x.moment === null ? '—' : f(x.moment, 3)}</td><td className="num">{f(x.arm, 4)}</td></tr>)}</tbody>
+          </table>
+        </details>
+      ))}
     </div>
   );
 }

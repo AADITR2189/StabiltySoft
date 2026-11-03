@@ -62,7 +62,7 @@ export const DEFAULT_GROUP_IDS = ['IS2008_GENERAL', 'IS2008_WEATHER'];
 export const EMPTY_LIBRARY = { criteria: [] as CriterionDef[], groups: [] as GroupDef[] };
 
 /** Human-readable descriptions of the building blocks for user-defined criteria. */
-export const CRITERION_KINDS: { kind: Exclude<CriterionDef['kind'], 'SPECIAL'>; label: string; unit: string; comparator: '>=' | '<='; fields: ('from' | 'to' | 'angle' | 'capAtFlood')[] }[] = [
+export const CRITERION_KINDS: { kind: Exclude<CriterionDef['kind'], 'SPECIAL'>; label: string; unit: string; comparator: '>=' | '<='; fields: ('from' | 'to' | 'angle' | 'capAtFlood' | 'moment')[] }[] = [
   { kind: 'AREA', label: 'Area under GZ curve between two angles', unit: 'm·rad', comparator: '>=', fields: ['from', 'to', 'capAtFlood'] },
   { kind: 'GZ_AT', label: 'Righting lever GZ at an angle', unit: 'm', comparator: '>=', fields: ['angle'] },
   { kind: 'GZ_MAX_FROM', label: 'Largest GZ at or beyond an angle', unit: 'm', comparator: '>=', fields: ['from'] },
@@ -70,4 +70,26 @@ export const CRITERION_KINDS: { kind: Exclude<CriterionDef['kind'], 'SPECIAL'>; 
   { kind: 'GM', label: 'Initial metacentric height GM (fluid)', unit: 'm', comparator: '>=', fields: [] },
   { kind: 'RANGE', label: 'Range of positive stability', unit: '°', comparator: '>=', fields: [] },
   { kind: 'HEEL', label: 'Static heel angle (maximum)', unit: '°', comparator: '<=', fields: [] },
+  { kind: 'HEEL_MOMENT', label: 'Heel at equilibrium under a heeling moment', unit: '°', comparator: '<=', fields: ['moment'] },
+  { kind: 'RESID_AREA', label: 'Residual area (GZ − heeling arm) from equilibrium to an angle', unit: 'm·rad', comparator: '>=', fields: ['moment', 'to', 'capAtFlood'] },
+  { kind: 'RESID_GZMAX', label: 'Largest residual arm (GZ − heeling arm)', unit: 'm', comparator: '>=', fields: ['moment'] },
+];
+
+/** Load case values a moment formula symbol can be linked to. */
+export const MOMENT_SOURCES: { source: import('./types').MomentSource; label: string; unit: string; guess: RegExp }[] = [
+  { source: 'HEEL', label: 'Heel angle θ (each GZ angle)', unit: '°', guess: /^(theta|θ|phi|φ|heel)$/i },
+  { source: 'DISPLACEMENT', label: 'Displacement Δ', unit: 't', guess: /^(disp|displacement|delta|Δ|W|D)$/ },
+  { source: 'DRAFT_MS', label: 'Draft at midship', unit: 'm', guess: /^(T|d|draft|Tm)$/ },
+  { source: 'DRAFT_MEAN', label: 'Mean draft (AP+FP)/2', unit: 'm', guess: /^(Tmean|dmean)$/i },
+  { source: 'DRAFT_AP', label: 'Draft at AP', unit: 'm', guess: /^(Ta|TAP)$/i },
+  { source: 'DRAFT_FP', label: 'Draft at FP', unit: 'm', guess: /^(Tf|TFP)$/i },
+  { source: 'VCB', label: 'VCB (KB)', unit: 'm', guess: /^(VCB|KB)$/i },
+  { source: 'KG', label: 'KG / VCG (solid)', unit: 'm', guess: /^(KG|VCG)$/i },
+  { source: 'KG_FLUID', label: 'KG corrected for free surface', unit: 'm', guess: /^(KGf|KGo|KG0)$/i },
+  { source: 'TCG', label: 'TCG', unit: 'm', guess: /^TCG$/i },
+  { source: 'LCG', label: 'LCG (from AP)', unit: 'm', guess: /^LCG$/i },
+  { source: 'GM', label: 'GM fluid', unit: 'm', guess: /^GM$/i },
+  { source: 'KM', label: 'KM', unit: 'm', guess: /^(KM|KMT)$/i },
+  { source: 'TRIM', label: 'Trim (+ by stern)', unit: 'm', guess: /^trim$/i },
+  { source: 'STATIC_HEEL', label: 'Static heel of the load case', unit: '°', guess: /^$/ },
 ];

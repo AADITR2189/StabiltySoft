@@ -86,8 +86,19 @@ export function GzChart({ r, mode = 'plain', criteria = [] }: { r: Results; mode
         </text>,
       );
     });
+    const drawnArms = new Set<string>();
     criteria.forEach((c, i) => (c.viz ?? []).forEach((v, j) => {
-      if (v.type === 'hline') {
+      if (v.type === 'residArea' && v.to > v.from) {
+        const lv = (x: number) => interpArm(v.points, x);
+        general.push(<path key={`r${i}${j}`} d={band(v.from, v.to, lv)} className="area-b" />);
+        const mid = (v.from + v.to) / 2;
+        general.push(<text key={`rl${i}${j}`} x={sx(mid)} y={sy((gzAt(mid) + lv(mid)) / 2)} textAnchor="middle" className="area-label">{`residual ${c.actual.toFixed(4)}${mark(c)}`}</text>);
+      } else if (v.type === 'arm' && !drawnArms.has(v.label)) {
+        drawnArms.add(v.label);
+        general.push(<path key={`m${i}${j}`} d={line(v.points.filter((p) => p.heel <= xMax).map((p) => ({ heel: p.heel, gz: p.arm })))} className="wind2" fill="none" />);
+        const p0 = v.points[Math.min(2, v.points.length - 1)];
+        general.push(<text key={`ml${i}${j}`} x={sx(p0.heel) + 4} y={sy(p0.arm) - 6} className="tick">{`Heeling arm: ${v.label}`}</text>);
+      } else if (v.type === 'hline') {
         general.push(<line key={`h${i}${j}`} x1={sx(v.from)} x2={sx(xMax)} y1={sy(v.value)} y2={sy(v.value)} className="ref" />);
         general.push(<text key={`hl${i}${j}`} x={sx(xMax) - 4} y={sy(v.value) - 5} textAnchor="end" className="tick">{v.label + mark(c)}</text>);
       } else if (v.type === 'vline') {
@@ -198,6 +209,10 @@ function interp(c: Pt[], x: number): number {
     }
   }
   return c[c.length - 1].gz;
+}
+
+function interpArm(pts: { heel: number; arm: number }[], x: number): number {
+  return interp(pts.map((p) => ({ heel: p.heel, gz: p.arm })), x);
 }
 
 function niceStep(raw: number): number {

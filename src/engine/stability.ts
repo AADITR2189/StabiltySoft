@@ -9,6 +9,8 @@ import type {
 } from './types';
 import { BUILTIN_CRITERIA, BUILTIN_GROUPS, DEFAULT_GROUP_IDS, EMPTY_LIBRARY } from './criteriaGroups';
 import { knAtCondition, solveHydrostatics } from './hydro';
+import { evaluate, parseFormula } from './formula';
+import type { MomentDef, MomentResult, GroupTableRow } from './types';
 
 export const ENGINE_VERSION = '0.1.0';
 const G = 9.81;
@@ -153,6 +155,77 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
   const deckEdgeAngle = Math.atan(Math.max(0, vessel.depth - Math.max(draftAP, draftFP, draftMS)) / (vessel.breadth / 2)) / DEG;
 
   const area = (a: number, b: number) => (b > a ? integrateDeg(gzS, a, b) : 0);
+
+  // ---------- User-defined heeling moments (formula + linked load case values) ----------
+  const SOURCE_LABEL: Record<string, string> = {
+    VALUE: 'Entered value', HEEL: 'Heel angle θ', DISPLACEMENT: 'Load case: displacement', DRAFT_MS: 'Load case: draft at midship',
+    DRAFT_MEAN: 'Load case: mean draft', DRAFT_AP: 'Load case: draft AP', DRAFT_FP: 'Load case: draft FP', KG: 'Load case: KG (solid)',
+    KG_FLUID: 'Load case: KG fluid', VCB: 'Load case: VCB (KB)', TCG: 'Load case: TCG', LCG: 'Load case: LCG', GM: 'Load case: GM fluid',
+    KM: 'Load case: KM', TRIM: 'Load case: trim', STATIC_HEEL: 'Load case: static heel',
+  };
+  const lcValue = (src: string): number | null => {
+    switch (src) {
+      case 'DISPLACEMENT': return disp;
+      case 'DRAFT_MS': return draftMS;
+      case 'DRAFT_MEAN': return draftMean;
+      case 'DRAFT_AP': return draftAP;
+      case 'DRAFT_FP': return draftFP;
+      case 'KG': return kg;
+      case 'KG_FLUID': return kgFluid;
+      case 'VCB': return hs.kb;
+      case 'TCG': return tcg;
+      case 'LCG': return lcg;
+      case 'GM': return gmFluid;
+      case 'KM': return kmt;
+      case 'TRIM': return trim;
+      case 'STATIC_HEEL': return Math.abs(heel);
+      default: return null;
+    }
+  };
+  const momentCache = new Map<string, { arm: (deg: number) => number; result: MomentResult }>();
+  function userMoment(id: string) {
+    const hit = momentCache.get(id);
+    if (hit) return hit;
+    const def: MomentDef | undefined = (library.moments ?? []).find((m) => m.id === id);
+    if (!def) throw new EngineError('NO_MOMENT', 'the heeling moment used by this criterion no longer exists.');
+    const f = parseFormula(def.formula);
+    const fixed: Record<string, number> = {};
+    let heelVar: string | null = null;
+    const inputs: MomentResult['inputs'] = [];
+    for (const name of f.variables) {
+      const v = def.vars.find((x) => x.name === name);
+      if (!v) throw new EngineError('FORMULA', `"${name}" in the formula of "${def.name}" is not linked to a value.`);
+      if (v.source === 'HEEL') { heelVar = name; inputs.push({ name, source: SOURCE_LABEL.HEEL, value: null, unit: '°' }); continue; }
+      const val = v.source === 'VALUE' ? v.value ?? NaN : lcValue(v.source);
+      if (val === null || !Number.isFinite(val)) {
+        throw new EngineError('FORMULA', `"${name}" in "${def.name}": ${v.source === 'VCB' ? 'VCB is not available in the hydrostatic tables' : 'no value entered'}.`);
+      }
+      fixed[name] = val;
+      inputs.push({ name, source: SOURCE_LABEL[v.source] ?? v.source, value: val, unit: v.unit ?? '' });
+    }
+    const momentAt = (deg: number) => evaluate(f, heelVar ? { ...fixed, [heelVar]: deg } : fixed);
+    const arm = (deg: number) => (def.result === 'ARM' ? momentAt(deg) : momentAt(deg) / disp);
+    const rows = tableAngles().map((a) => ({ heel: a, moment: def.result === 'ARM' ? null : momentAt(a), arm: arm(a) }));
+    const out = {
+      arm,
+      result: {
+        id: def.id, name: def.name, formula: def.formula, inputs, rows,
+        note: def.result === 'ARM' ? 'The formula gives the heeling arm directly.' : `Heeling arm = moment / displacement (Δ = ${disp.toFixed(2)} t).${heelVar ? '' : ' The moment does not depend on heel.'}`,
+      },
+    };
+    momentCache.set(id, out);
+    return out;
+  }
+  function tableAngles(): number[] {
+    const set = new Set<number>(kn.angles.filter((a) => a <= gzEnd));
+    for (let a = 0; a <= gzEnd + 1e-9; a += 5) set.add(a);
+    return [...set].sort((a, b) => a - b);
+  }
+  const equilibriumUnder = (arm: (d: number) => number, name: string) => {
+    const eq = firstCrossing((x) => gzS(x) - arm(x), 0, 0, gzEnd, 0.05);
+    if (eq === null) throw new EngineError('MOMENT_EXCEEDS_GZ', `the heeling arm of "${name}" exceeds the righting lever at all angles.`);
+    return eq;
+  };
   const angLabel = (to: number, cap: boolean) => (cap && floodAngle < to ? `θf (${floodAngle.toFixed(1)}°)` : `${to}°`);
 
   // ---------- Generic criteria (building blocks) ----------
@@ -192,6 +265,30 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
         return cmp(d, 'Range of positive stability', reg, '°', (avs ?? gzEnd) - Math.abs(heel));
       case 'HEEL':
         return cmp(d, `Static heel ≤ ${d.required}°`, reg, '°', Math.abs(heel));
+      case 'HEEL_MOMENT':
+      case 'RESID_AREA':
+      case 'RESID_GZMAX': {
+        const m = userMoment(p.momentId ?? '');
+        const pts = m.result.rows.map((x) => ({ heel: x.heel, arm: x.arm }));
+        const eq = equilibriumUnder(m.arm, m.result.name);
+        if (d.kind === 'HEEL_MOMENT') {
+          const r = cmp(d, `Heel at equilibrium under ${m.result.name} ${d.comparator === '>=' ? '≥' : '≤'} ${d.required}°`, reg, '°', eq);
+          r.viz = [{ type: 'arm', label: m.result.name, points: pts }, { type: 'vline', angle: eq, label: `Equilibrium ${eq.toFixed(2)}°` }];
+          return r;
+        }
+        if (d.kind === 'RESID_AREA') {
+          const toA = p.capAtFlood ? Math.min(p.to ?? 40, floodAngle) : (p.to ?? 40);
+          const val = toA > eq ? integrateDeg((x) => gzS(x) - m.arm(x), eq, toA) : 0;
+          const r = cmp(d, `Residual area under ${m.result.name}, equilibrium (${eq.toFixed(2)}°) to ${angLabel(p.to ?? 40, !!p.capAtFlood)}`, reg, 'm·rad', val);
+          r.viz = [{ type: 'arm', label: m.result.name, points: pts }, { type: 'residArea', from: eq, to: Math.max(eq, toA), points: pts }];
+          return r;
+        }
+        let best = -Infinity;
+        for (let x = eq; x <= gzEnd + 1e-9; x += 0.1) best = Math.max(best, gzS(x) - m.arm(x));
+        const r = cmp(d, `Largest residual arm under ${m.result.name}`, reg, 'm', best);
+        r.viz = [{ type: 'arm', label: m.result.name, points: pts }];
+        return r;
+      }
       default:
         throw new EngineError('UNKNOWN_CRITERION', `Criterion "${d.name}" has an unknown type.`);
     }
@@ -371,9 +468,57 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
       }
     }
     if (error && !warnings.some((w) => w.message === error)) warnings.push({ code: 'GROUP_NOT_EVALUATED', message: `${g.name}: ${error}` });
+    // heeling moments / levers of this group
+    const moments: MomentResult[] = [];
+    const arms: ((d: number) => number)[] = [];
+    const angles = tableAngles();
+    const constRows = (lever: number) => angles.map((a) => ({ heel: a, moment: lever * disp, arm: lever }));
+    if (!error) {
+      if (g.chart === 'WEATHER' && weather) {
+        const w = weather as WeatherDetail;
+        moments.push({ id: 'lw2', name: 'Gust wind heeling lever l_w2 = 1.5 · l_w1', formula: 'l_w2 = 1.5 · P·A·Z / (1000·g·Δ)', inputs: [
+          { name: 'P', source: 'IS Code 2008', value: w.P, unit: 'N/m²' }, { name: 'A', source: 'Windage table at draft', value: w.A, unit: 'm²' },
+          { name: 'Z', source: 'Windage table at draft', value: w.Z, unit: 'm' }, { name: 'Δ', source: 'Load case: displacement', value: disp, unit: 't' }],
+          rows: constRows(w.lw2), note: 'Wind levers are constant at all heel angles (IS Code 2008 A 2.3).' });
+        moments.push({ id: 'lw1', name: 'Steady wind heeling lever l_w1', formula: 'l_w1 = P·A·Z / (1000·g·Δ)', inputs: [], rows: constRows(w.lw1) });
+        arms.push(() => w.lw2, () => w.lw1);
+      }
+      if (g.chart === 'FIFI' && fifi) {
+        const ff = fifi as FifiDetail; const fv = vessel.fifi!;
+        moments.push({ id: 'fifi', name: 'Fire-fighting heeling moment', formula: 'M = [n·R·(h − T/2) + S·(T/2 − e)] · cos θ', inputs: [
+          { name: 'n', source: 'Vessel data', value: fv.monitorCount, unit: '' }, { name: 'R', source: 'Vessel data', value: fv.monitorForce, unit: 't' },
+          { name: 'h', source: 'Vessel data', value: fv.monitorHeight, unit: 'm' }, { name: 'S', source: 'Vessel data', value: fv.thrusterForce, unit: 't' },
+          { name: 'e', source: 'Vessel data', value: fv.thrusterHeight, unit: 'm' }, { name: 'T', source: 'Load case: draft at midship', value: draftMS, unit: 'm' },
+          { name: 'Δ', source: 'Load case: displacement', value: disp, unit: 't' }, { name: 'θ', source: 'Heel angle θ', value: null, unit: '°' }],
+          rows: angles.map((a) => ({ heel: a, moment: ff.moment * Math.cos(a * DEG), arm: ff.arm0 * Math.cos(a * DEG) })), note: 'Heeling arm = M / Δ.' });
+        arms.push((x) => ff.arm0 * Math.cos(x * DEG));
+      }
+      if (g.chart === 'CRANE' && crane) {
+        const c = crane as CraneDetail; const cv = vessel.crane!;
+        moments.push({ id: 'crane', name: `Wind heeling moment during lifting (${cv.windSpeedKnots} kn)`, formula: 'M = ½·ρ·V²·C·A·Z / 9806.65', inputs: [
+          { name: 'V', source: 'Vessel data', value: cv.windSpeedKnots, unit: 'kn' }, { name: 'ρ', source: 'Vessel data', value: cv.airDensity, unit: 't/m³ ×1000' },
+          { name: 'C', source: 'Vessel data', value: cv.windCoefficient, unit: '' }, { name: 'Δ', source: 'Load case: displacement', value: disp, unit: 't' }],
+          rows: constRows(c.lw), note: 'Crane and lifted load are included in the loading condition; only wind acts as a heeling moment.' });
+        arms.push(() => c.lw);
+      }
+      for (const cr of list) {
+        const id = allCriteria.find((x) => x.id === cr.id)?.params?.momentId;
+        if (id && !moments.some((m) => m.id === id)) {
+          const um = userMoment(id);
+          moments.push(um.result);
+          arms.push(um.arm);
+        }
+      }
+    }
+    const table: GroupTableRow[] = angles.map((a) => {
+      const k = knOf(a), kgSin = kgFluid * Math.sin(a * DEG), tcgCos = tcgS * Math.cos(a * DEG);
+      const gzv = k - kgSin - tcgCos;
+      const av = arms.map((fn) => fn(a));
+      return { heel: a, kn: k, kgSin, tcgCos, gz: gzv, arms: av, residual: av.length ? gzv - av[0] : null };
+    });
     groups.push({
       id: g.id, name: g.name, regulation: g.regulation, description: g.description, chart: g.chart,
-      criteria: list, error, passed: !error && list.length > 0 && list.every((c) => c.passed),
+      criteria: list, error, passed: !error && list.length > 0 && list.every((c) => c.passed), moments, table,
     });
   }
 
@@ -400,7 +545,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     deadweight: disp - vessel.lightship.weight,
     lcg, tcg, kg, sumFsm, fsc, kgFluid,
     draftMean: draft, draftAP, draftFP, draftMS, trim, heel, side,
-    lcb, lcf, kmt, mtc, tpc, gmSolid, gmFluid,
+    lcb, lcf, kmt, kb: hs.kb, mtc, tpc, gmSolid, gmFluid,
     floodAngle, floodOpening, deckEdgeAngle,
     gzMax, gzMaxAngle, avs,
     gzTable, gzCurve, tanks, summary, criteria: appliedCriteria, groups, weather, fifi, crane, warnings, overallPass,

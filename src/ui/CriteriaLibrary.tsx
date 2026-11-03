@@ -2,7 +2,8 @@
 // criteria (built-in or own) into stability groups by clicking them.
 import { useState } from 'react';
 import { BUILTIN_CRITERIA, BUILTIN_GROUPS, CRITERION_KINDS } from '../engine/criteriaGroups';
-import type { CriteriaLibrary, CriterionDef, GroupDef } from '../engine/types';
+import type { CriteriaLibrary, CriterionDef, GroupDef, MomentDef, Results } from '../engine/types';
+import { MomentBuilder } from './MomentBuilder';
 import { newId } from '../store';
 
 type Kind = (typeof CRITERION_KINDS)[number]['kind'];
@@ -13,9 +14,14 @@ interface Props {
   removeCriterion: (id: string) => void;
   saveGroup: (g: GroupDef) => void;
   removeGroup: (id: string) => void;
+  saveMoment: (m: MomentDef) => void;
+  removeMoment: (id: string) => void;
+  preview: Results | null;
+  lcName: string;
 }
 
-export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, saveGroup, removeGroup }: Props) {
+export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, saveGroup, removeGroup, saveMoment, removeMoment, preview, lcName }: Props) {
+  const moments = lib.moments ?? [];
   const all = [...BUILTIN_CRITERIA, ...lib.criteria];
   const unitOf = (c: CriterionDef) =>
     c.kind === 'SPECIAL' ? (c.id.includes('AREA') || c.id === 'OSV-1' || c.id === 'CRANE-3' ? 'm·rad' : c.id === 'CRANE-2' ? '' : '°') : CRITERION_KINDS.find((k) => k.kind === c.kind)?.unit ?? '';
@@ -30,7 +36,28 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
           Your criteria are labelled “User-defined”: they are not statutory unless approved by the Administration or class.
         </p>
       </section>
-      <CriterionForm onSave={addCriterion} />
+      <MomentBuilder onSave={saveMoment} preview={preview} lcName={lcName} />
+      {moments.length > 0 && (
+        <section className="panel">
+          <div className="panel-head"><h2>Heeling moments ({moments.length})</h2></div>
+          <div className="table-wrap">
+            <table className="grid">
+              <thead><tr><th>Moment</th><th>Formula</th><th>Symbols</th><th /></tr></thead>
+              <tbody>
+                {moments.map((m) => (
+                  <tr key={m.id}>
+                    <td className="wrap">{m.name}<div className="muted small">{m.result === 'ARM' ? 'gives heeling arm' : 'arm = moment ÷ Δ'}</div></td>
+                    <td className="mono wrap">{m.formula}</td>
+                    <td className="wrap small">{m.vars.map((v) => `${v.name}: ${v.source === 'VALUE' ? `${v.value} ${v.unit ?? ''}` : v.source === 'HEEL' ? 'θ' : v.source.toLowerCase().replace('_', ' ')}`).join(' · ')}</td>
+                    <td><ConfirmDelete label={`Delete ${m.name}`} onConfirm={() => removeMoment(m.id)} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      <CriterionForm onSave={addCriterion} moments={moments} />
       <section className="panel">
         <div className="panel-head"><h2>Intact stability criteria ({all.length})</h2></div>
         <div className="table-wrap">
@@ -71,7 +98,8 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
   );
 }
 
-function CriterionForm({ onSave }: { onSave: (c: CriterionDef) => void }) {
+function CriterionForm({ onSave, moments }: { onSave: (c: CriterionDef) => void; moments: MomentDef[] }) {
+  const [momentId, setMomentId] = useState('');
   const [kind, setKind] = useState<Kind>('AREA');
   const [name, setName] = useState('');
   const [from, setFrom] = useState('0');
@@ -90,19 +118,24 @@ function CriterionForm({ onSave }: { onSave: (c: CriterionDef) => void }) {
     const req = num(required), f = num(from), t = num(to), a = num(angle);
     if (!Number.isFinite(req)) return setMsg({ ok: false, text: 'Enter the required value as a number.' });
     if (k.fields.includes('from') && !(f >= 0 && f <= 90)) return setMsg({ ok: false, text: 'The "from" angle must be between 0° and 90°.' });
-    if (k.fields.includes('to') && !(t > f && t <= 90)) return setMsg({ ok: false, text: 'The "to" angle must be larger than the "from" angle and at most 90°.' });
+    if (k.fields.includes('to') && !k.fields.includes('moment') && !(t > f && t <= 90)) return setMsg({ ok: false, text: 'The "to" angle must be larger than the "from" angle and at most 90°.' });
     if (k.fields.includes('angle') && !(a >= 0 && a <= 90)) return setMsg({ ok: false, text: 'The angle must be between 0° and 90°.' });
+    const mom = moments.find((m) => m.id === momentId);
+    if (k.fields.includes('moment') && !mom) return setMsg({ ok: false, text: 'Choose a heeling moment (create one above first).' });
     const sym = comparator === '>=' ? '≥' : '≤';
     const auto =
       kind === 'AREA' ? `Area under GZ curve ${f}° to ${t}°${cap ? ' or θf' : ''} ${sym} ${req} m·rad`
       : kind === 'GZ_AT' ? `GZ at ${a}° ${sym} ${req} m`
       : kind === 'GZ_MAX_FROM' ? `GZ at an angle ≥ ${f}° ${sym} ${req} m`
+      : kind === 'HEEL_MOMENT' ? `Heel under ${mom?.name} ${sym} ${req}°`
+      : kind === 'RESID_AREA' ? `Residual area under ${mom?.name} to ${t}°${cap ? ' or θf' : ''} ${sym} ${req} m·rad`
+      : kind === 'RESID_GZMAX' ? `Residual arm under ${mom?.name} ${sym} ${req} m`
       : `${k.label} ${sym} ${req} ${k.unit}`;
     onSave({
       id: `USER-${newId()}`,
       name: name.trim() || auto,
       kind, comparator, required: req,
-      params: { from: k.fields.includes('from') ? f : undefined, to: k.fields.includes('to') ? t : undefined, angle: k.fields.includes('angle') ? a : undefined, capAtFlood: k.fields.includes('capAtFlood') ? cap : undefined },
+      params: { from: k.fields.includes('from') ? f : undefined, to: k.fields.includes('to') ? t : undefined, angle: k.fields.includes('angle') ? a : undefined, capAtFlood: k.fields.includes('capAtFlood') ? cap : undefined, momentId: k.fields.includes('moment') ? momentId : undefined },
       regulation: reference.trim() || 'User-defined',
     });
     setName('');
@@ -118,6 +151,14 @@ function CriterionForm({ onSave }: { onSave: (c: CriterionDef) => void }) {
             {CRITERION_KINDS.map((x) => <option key={x.kind} value={x.kind}>{x.label}</option>)}
           </select>
         </label>
+        {k.fields.includes('moment') && (
+          <label>Heeling moment
+            <select id="crit-moment" value={momentId} onChange={(e) => setMomentId(e.target.value)}>
+              <option value="">{moments.length ? 'Choose…' : 'Create a moment first'}</option>
+              {moments.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </label>
+        )}
         {k.fields.includes('from') && <label>From angle (°)<input id="crit-from" type="number" step="any" value={from} onChange={(e) => setFrom(e.target.value)} /></label>}
         {k.fields.includes('to') && <label>To angle (°)<input id="crit-to" type="number" step="any" value={to} onChange={(e) => setTo(e.target.value)} /></label>}
         {k.fields.includes('angle') && <label>At angle (°)<input id="crit-angle" type="number" step="any" value={angle} onChange={(e) => setAngle(e.target.value)} /></label>}
