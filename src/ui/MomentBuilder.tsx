@@ -34,11 +34,13 @@ const EXAMPLES = [
   { label: 'Towline pull', formula: 'F*(z - VCB)*cos(theta)' },
 ];
 
-export function MomentBuilder({ onSave, preview, lcName }: { onSave: (m: MomentDef) => void; preview: Results | null; lcName: string }) {
-  const [name, setName] = useState('');
-  const [formula, setFormula] = useState('');
-  const [result, setResult] = useState<'MOMENT' | 'ARM'>('MOMENT');
-  const [vars, setVars] = useState<Record<string, MomentVar>>({});
+export function MomentBuilder({ onSave, preview, lcName, editing, onCancel }: {
+  onSave: (m: MomentDef) => void; preview: Results | null; lcName: string; editing?: MomentDef | null; onCancel?: () => void;
+}) {
+  const [name, setName] = useState(editing?.name ?? '');
+  const [formula, setFormula] = useState(editing?.formula ?? '');
+  const [result, setResult] = useState<'MOMENT' | 'ARM'>(editing?.result ?? 'MOMENT');
+  const [vars, setVars] = useState<Record<string, MomentVar>>(() => Object.fromEntries((editing?.vars ?? []).map((v) => [v.name, v])));
   const [open, setOpen] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -80,14 +82,15 @@ export function MomentBuilder({ onSave, preview, lcName }: { onSave: (m: MomentD
     const list = parsed.vars.map(linkOf);
     const missing = list.find((v) => v.source === 'VALUE' && !Number.isFinite(v.value));
     if (missing) { setOpen(missing.name); return setMsg({ ok: false, text: `Enter a value for “${missing.name}” or link it to the load case.` }); }
-    onSave({ id: `M-${newId()}`, name: name.trim(), formula: formula.trim(), result, vars: list });
+    onSave({ id: editing?.id ?? `M-${newId()}`, name: name.trim(), formula: formula.trim(), result, vars: list });
+    if (editing) { setMsg({ ok: true, text: `Moment “${name.trim()}” updated. Groups and criteria using it are recalculated.` }); return; }
     setMsg({ ok: true, text: `Moment “${name.trim()}” saved. Use it in a criterion: “Heel at equilibrium under a heeling moment” or “Residual area”.` });
     setName(''); setFormula(''); setVars({}); setOpen(null);
   };
 
   return (
     <section className="panel">
-      <div className="panel-head"><h2>Create heeling moment</h2></div>
+      <div className="panel-head" id="moment-form"><h2>{editing ? `Edit heeling moment: ${editing.name}` : 'Create heeling moment'}</h2></div>
       <div className="form-row">
         <label>Moment name<input id="mom-name" className="wide" value={name} placeholder="e.g. Towline pull" onChange={(e) => setName(e.target.value)} /></label>
         <label>Formula gives
@@ -164,7 +167,10 @@ export function MomentBuilder({ onSave, preview, lcName }: { onSave: (m: MomentD
           </div>
         </>
       )}
-      <div className="form-actions"><button type="button" onClick={save}>Save moment</button></div>
+      <div className="form-actions confirm">
+        <button type="button" onClick={save}>{editing ? 'Save changes' : 'Save moment'}</button>
+        {editing && <button type="button" className="ghost" onClick={onCancel}>Cancel editing</button>}
+      </div>
       {msg && <p className={msg.ok ? 'ok-text small' : 'fail-text small'} role="status">{msg.text}</p>}
     </section>
   );

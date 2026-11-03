@@ -244,7 +244,7 @@ function OperationPanel({ lc, vessel, set }: { lc: LoadCase; vessel: Vessel; set
   const modu = ops.modu ?? { unitType: 'SURFACE' as const, windSpeed: 36, coefficient: 1.0 };
   const lift = ops.lifting ?? { exposed: false, hs: 0 };
   const show = {
-    wx: has('IS2008_WEATHER', 'IMO_A749', 'IMO_A562'), pax: has('IS2008_PAX'), grain: has('GRAIN'), modu: has('MODU'),
+    wx: has('IS2008_WEATHER', 'IMO_A749', 'IMO_A562'), pont: has('PONTOON'), craneWind: has('CRANE_OPS', 'LIFT_293'), pax: has('IS2008_PAX'), grain: has('GRAIN'), modu: has('MODU'),
     lift: has('LIFT_293', 'LIFT_295', 'LIFT_297', 'LIFT_297_LOSS'), liftAlt: has('LIFT_297', 'LIFT_297_LOSS'), hook: has('LIFT_295', 'LIFT_297_LOSS'),
     ah: has('ANCHOR_HANDLING'), tow: has('TOWING'), esc: has('ESCORT'),
   };
@@ -257,11 +257,28 @@ function OperationPanel({ lc, vessel, set }: { lc: LoadCase; vessel: Vessel; set
     <section className="panel">
       <div className="panel-head"><h2>Operation data</h2><span className="muted small">Inputs for the selected stability groups</span></div>
       <div className="ops">
-        {show.wx && (
+        {(show.wx || show.pont || show.craneWind) && (
           <fieldset className="ops-box">
-            <legend>Weather criterion</legend>
-            <label>Wind pressure P (N/m²)<NumInput value={ops.windPressure ?? 504} onCommit={(v) => setOps({ windPressure: v })} /></label>
-            <p className="muted small">504 N/m² for unrestricted service. A lower value only for restricted service with Administration approval.</p>
+            <legend>Wind</legend>
+            {show.wx && (
+              <>
+                <label>Weather criterion wind pressure P (N/m²)<NumInput value={ops.windPressure ?? 504} onCommit={(v) => setOps({ windPressure: v })} /></label>
+                {ops.windPressure !== undefined && <button type="button" className="ghost tiny" onClick={() => setOps({ windPressure: undefined })}>Reset to rule value</button>}
+                <p className="muted small">IS Code 2008: 504 N/m² (A.562: 0.0514 t/m²) for unrestricted service. A lower value only for restricted service with Administration approval.</p>
+              </>
+            )}
+            {show.pont && (
+              <>
+                <label>Pontoon wind pressure (N/m²)<NumInput value={ops.pontoonWindPressure ?? 540} onCommit={(v) => setOps({ pontoonWindPressure: v })} /></label>
+                {ops.pontoonWindPressure !== undefined && <button type="button" className="ghost tiny" onClick={() => setOps({ pontoonWindPressure: undefined })}>Reset to 540 N/m²</button>}
+              </>
+            )}
+            {show.craneWind && (
+              <>
+                <label>Wind speed during lifting (kn)<NumInput value={ops.craneWindKnots ?? vessel.crane?.windSpeedKnots ?? 20} onCommit={(v) => setOps({ craneWindKnots: v })} /></label>
+                {ops.craneWindKnots !== undefined && <button type="button" className="ghost tiny" onClick={() => setOps({ craneWindKnots: undefined })}>Reset to vessel crane data</button>}
+              </>
+            )}
           </fieldset>
         )}
         {show.pax && (

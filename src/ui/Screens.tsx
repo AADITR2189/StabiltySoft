@@ -123,7 +123,7 @@ export function Dashboard({ vessel, status, source, cases, activeId, calc, onOpe
   );
 }
 
-export function Criteria({ r }: { r: Results }) {
+export function Criteria({ r, lc, onChange }: { r: Results; lc: LoadCase; onChange: (lc: LoadCase) => void }) {
   return (
     <div className="stack">
       <section className="panel summary-strip">
@@ -135,7 +135,7 @@ export function Criteria({ r }: { r: Results }) {
         ))}
         {r.groups.length === 0 && <span className="fail-text">No stability group is selected for this load case. Select groups in the Load Case screen.</span>}
       </section>
-      {r.groups.map((g) => <GroupSection key={g.id} g={g} r={r} />)}
+      {r.groups.map((g) => <GroupSection key={g.id} g={g} r={r} lc={lc} onChange={onChange} />)}
       {r.warnings.length > 0 && (
         <section className="panel">
           <div className="panel-head"><h2>Warnings</h2></div>
@@ -146,7 +146,7 @@ export function Criteria({ r }: { r: Results }) {
   );
 }
 
-function GroupSection({ g, r }: { g: CriteriaGroupResult; r: Results }) {
+function GroupSection({ g, r, lc, onChange }: { g: CriteriaGroupResult; r: Results; lc: LoadCase; onChange: (lc: LoadCase) => void }) {
   const w = r.weather;
   return (
     <section className={`panel group ${g.passed ? 'g-pass' : 'g-fail'}`} id={`group-${g.id}`}>
@@ -180,6 +180,7 @@ function GroupSection({ g, r }: { g: CriteriaGroupResult; r: Results }) {
           <tbody>{g.criteria.map((c) => <CritRow key={c.code} c={c} />)}</tbody>
         </table>
       </div>
+      {g.chart === 'WEATHER' && <WindPressureControl lc={lc} onChange={onChange} isA562={g.id === 'IMO_A562'} />}
       <GroupTables g={g} side={r.side} />
       {g.chart === 'WEATHER' && w && (
         <details className="calc-details">
@@ -368,6 +369,27 @@ function GroupTables({ g, side }: { g: CriteriaGroupResult; side: 1 | -1 }) {
           </table>
         </details>
       ))}
+    </div>
+  );
+}
+
+/** Change the weather-criterion wind pressure where its effect is visible. */
+function WindPressureControl({ lc, onChange, isA562 }: { lc: LoadCase; onChange: (lc: LoadCase) => void; isA562: boolean }) {
+  const rule = isA562 ? 504.2 : 504;
+  const cur = lc.ops?.windPressure;
+  const set = (v: number | undefined) => onChange({ ...lc, ops: { ...(lc.ops ?? {}), windPressure: v } });
+  return (
+    <div className="wind-ctl">
+      <label htmlFor={`wp-${isA562 ? 'a' : 'i'}`}>Wind pressure P</label>
+      <input
+        id={`wp-${isA562 ? 'a' : 'i'}`} key={cur ?? 'rule'} type="number" step="any" defaultValue={cur ?? rule}
+        onBlur={(e) => { const v = Number(e.target.value); if (e.target.value.trim() !== '' && Number.isFinite(v) && v > 0) set(Math.abs(v - rule) < 1e-9 ? undefined : v); else e.target.value = String(cur ?? rule); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      />
+      <span className="muted">N/m²</span>
+      {cur !== undefined ? (
+        <><span className="warn-text small">Changed from the rule value {rule} N/m²</span><button type="button" className="ghost tiny" onClick={() => set(undefined)}>Reset</button></>
+      ) : <span className="muted small">Rule value {isA562 ? '0.0514 t/m² (504.2 N/m²)' : '504 N/m²'}, unrestricted service</span>}
     </div>
   );
 }

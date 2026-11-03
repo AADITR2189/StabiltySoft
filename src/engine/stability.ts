@@ -478,7 +478,9 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     const cr = vessel.crane;
     if (!cr) throw new EngineError('NO_CRANE_DATA', 'no crane data (design heel, lifting wind) is entered for this vessel.');
     const { A, hA, hU } = windTable();
-    const v = cr.windSpeedKnots * 0.514444;
+    const windKn = lc.ops?.craneWindKnots ?? cr.windSpeedKnots;
+    if (windKn !== cr.windSpeedKnots) warnings.push({ code: 'CRANE_WIND_CHANGED', message: `Lifting wind speed ${windKn} kn used instead of the vessel's crane data (${cr.windSpeedKnots} kn).` });
+    const v = windKn * 0.514444;
     const q = 0.5 * cr.airDensity * v * v; // N/m²
     const moment = (q * cr.windCoefficient * A * (hA - hU)) / 9806.65; // t·m
     const lw = moment / disp;
@@ -492,7 +494,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     const to20 = Math.min(20, floodAngle);
     const areaTo20 = to20 > phi1 ? integrateDeg((x) => gzS(x) - lw, phi1, to20) : 0;
     crane = { moment, lw, phi1, phi2, arl, ahl, areaTo20, deckEdgeAngle, side };
-    special.set('CRANE-1', le('CRANE-1', `Equilibrium heel with crane load and ${cr.windSpeedKnots} kn wind ≤ ${cr.maxHeel}° (crane design heel)`, 'IS 2008 B 2.9.3.2.1', '°', cr.maxHeel, phi1));
+    special.set('CRANE-1', le('CRANE-1', `Equilibrium heel with crane load and ${windKn} kn wind ≤ ${cr.maxHeel}° (crane design heel)`, 'IS 2008 B 2.9.3.2.1', '°', cr.maxHeel, phi1));
     const r2 = ge('CRANE-2', 'Area ratio ARL / AHL ≥ 1.4 (equilibrium to φ2)', 'IS 2008 B 2.9.4.1.2', '', 1.4, ahl > 0 ? arl / ahl : 0);
     special.set('CRANE-2', r2);
     const r3 = ge('CRANE-3', `Residual area from equilibrium to ${to20 < 20 ? 'θf' : '20°'}`, 'IS 2008 B 2.9.4.1.2', 'm·rad', 0.03, areaTo20);
@@ -576,14 +578,16 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     r1.viz = [{ type: 'area', from: 0, to: Math.min(gzMaxAngle, floodAngle) }];
     special.set('PONT-1', r1);
     const { A, hA, hU } = windTable();
-    const lw = (540 * A * (hA - hU)) / (1000 * G * disp);
-    const m = builtMoment('pontoon-wind', 'Wind heeling lever, 540 N/m²', 'l_w = 540 · A · Z / (1000 · g · Δ)', [
+    const Pp = lc.ops?.pontoonWindPressure ?? 540;
+    if (Pp !== 540) warnings.push({ code: 'PONTOON_WIND_CHANGED', message: `Pontoon wind pressure ${Pp} N/m² used instead of the IS Code 2008 B 2.2 value of 540 N/m².` });
+    const lw = (Pp * A * (hA - hU)) / (1000 * G * disp);
+    const m = builtMoment('pontoon-wind', `Wind heeling lever, ${Pp} N/m²`, `l_w = ${Pp} · A · Z / (1000 · g · Δ)`, [
       lcIn('A', 'Windage table at draft', A, 'm²'), lcIn('Z', 'Windage table at draft', hA - hU, 'm'), lcIn('Δ', 'Load case: displacement', disp, 't')], () => lw, 'Constant with heel.');
     specialMoment.set('PONT-2', m);
     const eq = equilibriumUnder(m.arm, m.result.name);
     const fb = vessel.depth - Math.max(draftAP, draftFP);
     const halfFb = Math.atan(Math.max(0, fb / 2) / (vessel.breadth / 2)) / DEG;
-    const r2 = le('PONT-2', `Static heel under 540 N/m² wind ≤ half-freeboard angle (${halfFb.toFixed(2)}°)`, 'IS Code 2008 B 2.2', '°', halfFb, eq);
+    const r2 = le('PONT-2', `Static heel under ${Pp} N/m² wind ≤ half-freeboard angle (${halfFb.toFixed(2)}°)`, 'IS Code 2008 B 2.2', '°', halfFb, eq);
     r2.viz = [{ type: 'arm', label: m.result.name, points: m.result.rows }, { type: 'vline', angle: eq, label: `Wind heel ${eq.toFixed(2)}°` }, { type: 'vline', angle: halfFb, label: `Half freeboard ${halfFb.toFixed(1)}°` }];
     special.set('PONT-2', r2);
   }
@@ -871,8 +875,9 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
       }
       if (g.chart === 'CRANE' && crane) {
         const c = crane as CraneDetail; const cv = vessel.crane!;
-        moments.push({ id: 'crane', name: `Wind heeling moment during lifting (${cv.windSpeedKnots} kn)`, formula: 'M = ½·ρ·V²·C·A·Z / 9806.65', inputs: [
-          { name: 'V', source: 'Vessel data', value: cv.windSpeedKnots, unit: 'kn' }, { name: 'ρ', source: 'Vessel data', value: cv.airDensity, unit: 't/m³ ×1000' },
+        const kn = lc.ops?.craneWindKnots ?? cv.windSpeedKnots;
+        moments.push({ id: 'crane', name: `Wind heeling moment during lifting (${kn} kn)`, formula: 'M = ½·ρ·V²·C·A·Z / 9806.65', inputs: [
+          { name: 'V', source: lc.ops?.craneWindKnots !== undefined ? 'Load case: operation data' : 'Vessel data', value: kn, unit: 'kn' }, { name: 'ρ', source: 'Vessel data', value: cv.airDensity, unit: 't/m³ ×1000' },
           { name: 'C', source: 'Vessel data', value: cv.windCoefficient, unit: '' }, { name: 'Δ', source: 'Load case: displacement', value: disp, unit: 't' }],
           rows: constRows(c.lw), note: 'Crane and lifted load are included in the loading condition; only wind acts as a heeling moment.' });
         arms.push(() => c.lw);

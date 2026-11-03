@@ -24,6 +24,12 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
   const moments = lib.moments ?? [];
   const [editing, setEditing] = useState<GroupDef | null>(null);
   const [editCrit, setEditCrit] = useState<CriterionDef | null>(null);
+  const [editMom, setEditMom] = useState<MomentDef | null>(null);
+  const momUsedIn = (id: string) => [
+    ...lib.groups.filter((g) => (g.momentIds ?? []).includes(id)).map((g) => `group ${g.name}`),
+    ...lib.criteria.filter((c) => c.params?.momentId === id).map((c) => `criterion ${c.name}`),
+  ];
+  const startEditCrit = (c: CriterionDef) => { setEditCrit(c); setTimeout(() => document.getElementById('criterion-form')?.scrollIntoView({ behavior: 'smooth' }), 0); };
   const usedIn = (id: string) => [...BUILTIN_GROUPS, ...lib.groups].filter((g) => g.criterionIds.includes(id)).map((g) => g.name);
   const all = [...BUILTIN_CRITERIA, ...lib.criteria];
   const unitOf = (c: CriterionDef) =>
@@ -46,7 +52,32 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
         </div>
         <p className="muted small">Your own criteria and groups are labelled “User-defined”: they are not statutory unless approved by the Administration or class.</p>
       </section>
-      <MomentBuilder onSave={saveMoment} preview={preview} lcName={lcName} />
+      <section className="panel">
+        <div className="panel-head"><h2>Your criteria ({lib.criteria.length})</h2><span className="muted small">Criteria you created: edit or delete them here</span></div>
+        {lib.criteria.length === 0 ? <p className="muted small">None yet. Create one in “Create intact stability criterion” below.</p> : (
+          <div className="table-wrap">
+            <table className="grid">
+              <thead><tr><th>Criterion</th><th className="num">Requirement</th><th>Used in</th><th /></tr></thead>
+              <tbody>
+                {lib.criteria.map((c) => (
+                  <tr key={c.id}>
+                    <td className="wrap">{c.name}<div className="muted small">{c.regulation ?? 'User-defined'}</div></td>
+                    <td className="num">{c.comparator === '>=' ? '≥' : '≤'} {c.required} {unitOf(c)}</td>
+                    <td className="wrap small">{usedIn(c.id).join(', ') || <span className="muted">not in a group</span>}</td>
+                    <td>
+                      <span className="confirm">
+                        <button className="ghost" onClick={() => startEditCrit(c)}>Edit</button>
+                        <ConfirmDelete label={`Delete ${c.name}`} onConfirm={() => removeCriterion(c.id)} warning={usedIn(c.id).length ? `Used in: ${usedIn(c.id).join(', ')}. It will be removed from these groups.` : undefined} />
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      <MomentBuilder key={`mom-${editMom?.id ?? 'new'}`} onSave={(m) => { saveMoment(m); setEditMom(null); }} preview={preview} lcName={lcName} editing={editMom} onCancel={() => setEditMom(null)} />
       {moments.length > 0 && (
         <section className="panel">
           <div className="panel-head"><h2>Heeling moments ({moments.length})</h2></div>
@@ -59,7 +90,12 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
                     <td className="wrap">{m.name}<div className="muted small">{m.result === 'ARM' ? 'gives heeling arm' : 'arm = moment ÷ Δ'}</div></td>
                     <td className="mono wrap">{m.formula}</td>
                     <td className="wrap small">{m.vars.map((v) => `${v.name}: ${v.source === 'VALUE' ? `${v.value} ${v.unit ?? ''}` : v.source === 'HEEL' ? 'θ' : v.source.toLowerCase().replace('_', ' ')}`).join(' · ')}</td>
-                    <td><ConfirmDelete label={`Delete ${m.name}`} onConfirm={() => removeMoment(m.id)} /></td>
+                    <td>
+                      <span className="confirm">
+                        <button className="ghost" onClick={() => { setEditMom(m); setTimeout(() => document.getElementById('moment-form')?.scrollIntoView({ behavior: 'smooth' }), 0); }}>Edit</button>
+                        <ConfirmDelete label={`Delete ${m.name}`} onConfirm={() => removeMoment(m.id)} warning={momUsedIn(m.id).length ? `Used by: ${momUsedIn(m.id).join(', ')}. Those will fail until another moment is chosen.` : undefined} />
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -83,7 +119,7 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
                   <td>
                     {!c.builtin && (
                       <span className="confirm">
-                        <button className="ghost" onClick={() => { setEditCrit(c); document.getElementById('criterion-form')?.scrollIntoView({ behavior: 'smooth' }); }}>Edit</button>
+                        <button className="ghost" onClick={() => startEditCrit(c)}>Edit</button>
                         <ConfirmDelete label={`Delete ${c.name}`} onConfirm={() => removeCriterion(c.id)} warning={usedIn(c.id).length ? `Used in: ${usedIn(c.id).join(', ')}. It will be removed from these groups.` : undefined} />
                       </span>
                     )}

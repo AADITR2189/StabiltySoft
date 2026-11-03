@@ -142,3 +142,20 @@ describe('IMO A.562(14) weather criterion (1985)', () => {
     expect(Math.abs(a.criteria[1].actual - is.criteria[1].actual)).toBeLessThan(0.001);
   });
 });
+
+describe('adjustable wind values', () => {
+  it('pontoon wind pressure scales the lever and warns when not 540 N/m²', () => {
+    const a = calculate(demoVessel, base(['PONTOON']));
+    const b = calculate(demoVessel, base(['PONTOON'], { pontoonWindPressure: 270 }));
+    expect(b.groups[0].moments[0].rows[0].arm).toBeCloseTo(a.groups[0].moments[0].rows[0].arm / 2, 12);
+    expect(b.warnings.map((w) => w.code)).toContain('PONTOON_WIND_CHANGED');
+  });
+  it('crane wind speed: lever scales with V²', () => {
+    const marsol = VESSELS.find((v) => v.id === 'marsol-splendor')!;
+    const lc = marsol.defaultLoadCases.find((c) => c.id === 'marsol-C2T')!;
+    const a = calculate(marsol.vessel, { ...lc, criteriaGroups: ['CRANE_OPS'] });
+    const b = calculate(marsol.vessel, { ...lc, criteriaGroups: ['CRANE_OPS'], ops: { craneWindKnots: 40 } });
+    expect(b.crane!.lw).toBeCloseTo(a.crane!.lw * 4, 12);
+    expect(b.warnings.map((w) => w.code)).toContain('CRANE_WIND_CHANGED');
+  });
+});

@@ -286,3 +286,6 @@ button.tiny { font-size: 12px; padding: 1px 8px; margin: 2px 4px 2px 0; }
 .ops-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 16px; }
 .tension { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-top: 4px; }
 .tension .table-wrap { width: 100%; }
+
+.wind-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 6px; }
+.wind-ctl label { font-weight: 600; color: var(--powder); }

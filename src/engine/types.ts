@@ -227,6 +227,10 @@ export type CriterionKind =
 export interface OperationData {
   /** IS Code 2008 A 2.3 wind pressure, N/m² (504 unrestricted; less only with Administration approval). */
   windPressure?: number;
+  /** IS Code 2008 B 2.2 pontoon wind pressure, N/m² (rule value 540). */
+  pontoonWindPressure?: number;
+  /** Wind speed during lifting (knots); default from the vessel's crane data. */
+  craneWindKnots?: number;
   /** IS Code 2008 A 3.1: passengers crowding to one side. */
   passengers?: { count: number; massEach: number; lever: number };
   /** IS Code 2008 A 3.1: service speed for the turning heel (knots). */
