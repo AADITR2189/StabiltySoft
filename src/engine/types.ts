@@ -235,8 +235,19 @@ export interface OperationData {
   grain?: { holds: { name: string; vhm: number; sf: number }[]; deckEdgeLimit: boolean };
   /** MODU Code 2009: unit type, wind speed (m/s) and area-weighted shape × height coefficient. */
   modu?: { unitType: 'SURFACE' | 'COLUMN'; windSpeed: number; coefficient: number };
-  /** IS Code 2008 B 2.9.3: lifting in exposed waters and the significant wave height. */
-  lifting?: { exposed: boolean; hs: number };
+  /** IS Code 2008 B 2.9: lifting waters; P_L, y, counter-ballast moment and hook-load weight item for 2.9.5–2.9.7. */
+  lifting?: {
+    exposed: boolean; hs: number;
+    pl?: number; y?: number; cbm?: number; hookWeightId?: string; applianceMaxHeel?: number;
+  };
+  /** IS Code 2008 B 2.7 anchor handling (MSC.415(97)). */
+  anchor?: import('./msc415').AnchorInput;
+  /** IS Code 2008 B 2.8 towing (MSC.415(97)). */
+  towing?: import('./msc415').TowingInput;
+  /** IS Code 2008 B 2.8.3 escort: maximum heeling lever from full-scale trials, model tests or simulation (m). */
+  escort?: { hl: number };
+  /** Height of the deck at the stern above base for the stern freeboard check (m); default: moulded depth. */
+  sternDeckZ?: number;
 }
 
 export interface CriterionDef {
@@ -389,4 +400,6 @@ export interface Results {
   crane: CraneDetail | null;
   warnings: Warning[];
   overallPass: boolean;
+  /** Signed GZ function of this condition (heel + to starboard). Not serialised. */
+  gzAt?: (deg: number) => number;
 }

@@ -42,6 +42,23 @@ export const BUILTIN_CRITERIA: CriterionDef[] = [
   // MODU Code 2009
   { id: 'MODU-1', name: 'Area under righting moment to 2nd intercept or θf ≥ 1.4 (surface / self-elevating) or 1.3 (column-stabilised) × wind heeling area', kind: 'SPECIAL', comparator: '>=', required: 1.4, regulation: 'MODU Code 2009 3.4' },
   { id: 'MODU-2', name: 'Righting moment positive from upright to the 2nd intercept', kind: 'SPECIAL', comparator: '>=', required: 0, regulation: 'MODU Code 2009 3.4' },
+  // MSC.415(97): IS Code 2008 Part B 2.7 anchor handling
+  { id: 'AH-1', name: 'Residual area between GZ and wire heeling lever, φe to φc or φf ≥ 0.070 m·rad', kind: 'SPECIAL', comparator: '>=', required: 0.07, regulation: 'IS 2008 B 2.7.4.2' },
+  { id: 'AH-2', name: 'Maximum residual righting lever (GZ − heeling lever) ≥ 0.20 m', kind: 'SPECIAL', comparator: '>=', required: 0.2, regulation: 'IS 2008 B 2.7.4.3' },
+  { id: 'AH-3', name: 'Static heel φe ≤ angle of GZ = 50 % GZmax, deck-edge immersion angle or 15° (least)', kind: 'SPECIAL', comparator: '<=', required: 15, regulation: 'IS 2008 B 2.7.4.4' },
+  { id: 'AH-4', name: 'Freeboard at stern on centreline ≥ 0.005·L (displacement Δ2 incl. Fv)', kind: 'SPECIAL', comparator: '>=', required: 0, regulation: 'IS 2008 B 2.7.4.5' },
+  // 2.8 towing and escort
+  { id: 'TOW-1', name: 'Self-tripping: area A (φe to φc or φf) > area B (0 to φe)', kind: 'SPECIAL', comparator: '>=', required: 1, regulation: 'IS 2008 B 2.8.4.2' },
+  { id: 'TOW-2', name: 'Tow-tripping: first intersection φe < down-flooding angle φf', kind: 'SPECIAL', comparator: '<=', required: 0, regulation: 'IS 2008 B 2.8.4.3' },
+  { id: 'TOW-3', name: 'Freeboard at stern ≥ 0.005·L_LL', kind: 'SPECIAL', comparator: '>=', required: 0, regulation: 'IS 2008 B 2.8.6.2' },
+  { id: 'ESC-1', name: 'Escort: area A ≥ 1.25 × area B (φe to 20°)', kind: 'SPECIAL', comparator: '>=', required: 1.25, regulation: 'IS 2008 B 2.8.4.4.1' },
+  { id: 'ESC-2', name: 'Escort: area C ≥ 1.40 × area D (0 to φd)', kind: 'SPECIAL', comparator: '>=', required: 1.4, regulation: 'IS 2008 B 2.8.4.4.2' },
+  { id: 'ESC-3', name: 'Escort: equilibrium heel φe ≤ 15°', kind: 'SPECIAL', comparator: '<=', required: 15, regulation: 'IS 2008 B 2.8.4.4.3' },
+  // 2.9.5 – 2.9.7 lifting
+  { id: 'LIFT-L1', name: 'Sudden loss of hook load: Area 2 > 1.4 × Area 1 (exposed) / 1.0 × Area 1 (not exposed)', kind: 'SPECIAL', comparator: '>=', required: 1.4, regulation: 'IS 2008 B 2.9.5.1' },
+  { id: 'LIFT-A1', name: 'Alternative method: residual area φe to 40° or max residual angle ≥ 0.080 (exposed) / 0.053 m·rad', kind: 'SPECIAL', comparator: '>=', required: 0.08, regulation: 'IS 2008 B 2.9.7.1.1' },
+  { id: 'LIFT-A2', name: 'Alternative method: equilibrium heel ≤ 10°, deck immersion angle or lifting appliance limit (least)', kind: 'SPECIAL', comparator: '<=', required: 10, regulation: 'IS 2008 B 2.9.7.1.2' },
+  { id: 'LIFT-A3', name: 'Alternative method, sudden loss of hook load: Area 2 − Area 1 > K (0.037 exposed / 0)', kind: 'SPECIAL', comparator: '>=', required: 0, regulation: 'IS 2008 B 2.9.7.2' },
   // IMO A.167(ES.IV), 1968 (superseded)
   { id: 'A167-1', name: 'Area under GZ curve 0° to 30°', kind: 'AREA', comparator: '>=', required: 0.055, params: { from: 0, to: 30, capAtFlood: true }, regulation: 'IMO A.167(ES.IV)' },
   { id: 'A167-2', name: 'Area under GZ curve 0° to 40° or θf', kind: 'AREA', comparator: '>=', required: 0.09, params: { from: 0, to: 40, capAtFlood: true }, regulation: 'IMO A.167(ES.IV)' },
@@ -81,6 +98,36 @@ export const BUILTIN_GROUPS: GroupDef[] = [
     id: 'LIFT_293', name: 'Lifting Operations (IS Code B 2.9.3)', regulation: 'IS Code 2008 Part B 2.9.3 (MSC.415(97))',
     description: 'Crane and load in the loading condition: equilibrium heel within the crane design heel and minimum freeboard. Use together with the General and Weather groups.',
     chart: 'CRANE', criterionIds: ['CRANE-1', 'CRANE-5'],
+  },
+  {
+    id: 'ANCHOR_HANDLING', name: 'Anchor Handling (IS Code B 2.7)', regulation: 'IS Code 2008 Part B 2.7 (MSC.415(97))',
+    description: 'Wire tension heeling lever (M_AH / Δ2)·cos φ. Before the operation the condition should also meet IS 2008 A 2.2 (or OSV 2.4): select that group too.',
+    chart: 'GENERAL', criterionIds: ['AH-1', 'AH-2', 'AH-3', 'AH-4'],
+  },
+  {
+    id: 'TOWING', name: 'Towing (IS Code B 2.8)', regulation: 'IS Code 2008 Part B 2.8.2, 2.8.4.2–.3, 2.8.6.2 (MSC.415(97))',
+    description: 'Self-tripping (bollard pull) and tow-tripping heeling levers. Applies in addition to IS 2008 A 2.2 or the equivalent criteria: select that group too.',
+    chart: 'GENERAL', criterionIds: ['TOW-1', 'TOW-2', 'TOW-3'],
+  },
+  {
+    id: 'ESCORT', name: 'Escort Towing (IS Code B 2.8.4.4)', regulation: 'IS Code 2008 Part B 2.8.3 / 2.8.4.4 (MSC.415(97))',
+    description: 'Maximum escort heeling lever (constant) from full-scale trials, model tests or numerical simulation.',
+    chart: 'GENERAL', criterionIds: ['ESC-1', 'ESC-2', 'ESC-3'],
+  },
+  {
+    id: 'LIFT_295', name: 'Lifting: Sudden Loss of Hook Load (B 2.9.5)', regulation: 'IS Code 2008 Part B 2.9.5 (MSC.415(97))',
+    description: 'Crane and load in the loading condition, counter-ballast used. Compares the condition after the hook load is lost. Choose the hook-load weight in Operation data.',
+    chart: 'GENERAL', criterionIds: ['LIFT-L1'],
+  },
+  {
+    id: 'LIFT_297', name: 'Lifting: Alternative Method (B 2.9.6 / 2.9.7)', regulation: 'IS Code 2008 Part B 2.9.6 / 2.9.7.1 (MSC.415(97))',
+    description: 'Lift load on the centreline in the loading condition; its transverse effect applied as heeling lever HL = (P_L·y − CBM)·cos φ / Δ.',
+    chart: 'GENERAL', criterionIds: ['LIFT-A1', 'LIFT-A2'],
+  },
+  {
+    id: 'LIFT_297_LOSS', name: 'Lifting: Alternative Method, Loss of Hook Load (B 2.9.7.2)', regulation: 'IS Code 2008 Part B 2.9.7.2 (MSC.415(97))',
+    description: 'Counter-ballasted lifts: Area 2 − Area 1 > K with CBHL2 = CBM·cos φ / (Δ − P_L).',
+    chart: 'GENERAL', criterionIds: ['LIFT-A3'],
   },
   {
     id: 'IS2008_PAX', name: 'Passenger Ships (IS Code 2008 A 3.1)', regulation: 'IMO IS Code 2008, Part A, 3.1',

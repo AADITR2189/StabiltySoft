@@ -10,6 +10,7 @@ import type {
 import { BUILTIN_CRITERIA, BUILTIN_GROUPS, DEFAULT_GROUP_IDS, EMPTY_LIBRARY } from './criteriaGroups';
 import { knAtCondition, solveHydrostatics } from './hydro';
 import { evaluate, parseFormula } from './formula';
+import { anchorGeometry, liftThreshold, selfTrippingLever, towCT, towTripping } from './msc415';
 import type { MomentDef, MomentResult, GroupTableRow } from './types';
 
 export const ENGINE_VERSION = '0.1.0';
@@ -30,6 +31,13 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     ...tanks.map((t) => ({ group: 'Tanks', w: t.weight, x: t.lcg, y: t.tcg, z: t.vcg })),
     ...lc.weights.map((w) => ({ group: 'Variable weights', w: w.weight, x: w.lcg, y: w.tcg, z: w.vcg })),
   ];
+  // IS 2008 B 2.7.2: anchor handling adds the vertical wire load Fv at the stern on the centreline (Δ2).
+  const selectedEarly = lc.criteriaGroups ?? vessel.criteriaGroups ?? DEFAULT_GROUP_IDS;
+  const ahGeo = selectedEarly.includes('ANCHOR_HANDLING') && lc.ops?.anchor ? anchorGeometry(lc.ops.anchor, vessel.breadth) : null;
+  if (ahGeo && lc.ops?.anchor) {
+    if (lc.ops.anchor.fp > lc.ops.anchor.fd) warnings.push({ code: 'FP_ABOVE_FD', message: `Permissible tension Fp ${lc.ops.anchor.fp} t is greater than the design maximum tension Fd ${lc.ops.anchor.fd} t (not allowed by 2.7.2).` });
+    items.push({ group: 'Variable weights', w: ahGeo.fv, x: lc.ops.anchor.xStern, y: 0, z: lc.ops.anchor.zStern });
+  }
   // Negative weight items are allowed: they remove a weight already included in the lightship
   // (e.g. a crane boom moved from its stowed position). They are reported as a warning.
   for (const w of lc.weights) {
@@ -596,7 +604,192 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     special.get('MODU-2')!.passed = minGz > 0;
   }
 
+  // ---------- MSC.415(97): anchor handling, towing, escort, lifting (alternative and loss of hook load) ----------
+  const sternFreeboard = (xStern: number) => {
+    const tLocal = draftAP + ((draftFP - draftAP) * xStern) / L;
+    return (ops.sternDeckZ ?? vessel.depth) - tLocal;
+  };
+
+  function computeAnchor() {
+    const a = ops.anchor;
+    if (!a || !ahGeo) throw new EngineError('NO_OPS_DATA', 'enter the anchor handling data (tension, bollard pull, α, towing pin geometry) in the load case (Operation data).');
+    const arm = (x: number) => (ahGeo.mah / disp) * Math.cos(x * DEG);
+    const m = builtMoment('ah', `Wire tension heeling moment (Fp ${a.fp} t, α ${a.alpha}°)`, 'HLφ = (M_AH / Δ2)·cos φ ; M_AH = Fp·(h·sin α·cos β + y·sin β)', [
+      lcIn('Fp', 'Load case: permissible tension', a.fp, 't'), lcIn('α', 'Load case: horizontal angle', a.alpha, '°'),
+      lcIn('β', `max(tan⁻¹(y/(h·sin α)) = ${ahGeo.betaMax.toFixed(2)}°, cos⁻¹(1.5·BP/(Fp·cos α)) = ${ahGeo.betaMin.toFixed(2)}°)`, ahGeo.beta, '°'),
+      lcIn('h', 'Load case: propulsion centre to pin top', a.h, 'm'), lcIn('y', `y0 + x·tan α (≤ B/2)`, ahGeo.y, 'm'),
+      lcIn('Fv', 'Fp·sin β, added at the stern (included in Δ2)', ahGeo.fv, 't'), lcIn('M_AH', 'Wire heeling moment', ahGeo.mah, 't·m'),
+      lcIn('Δ2', 'Load case: displacement incl. Fv', disp, 't')], arm, 'IS 2008 B 2.7.2.1. Fv is included as a weight at the stern, so Δ, trim and KG are those of Δ2.');
+    ['AH-1', 'AH-2', 'AH-3'].forEach((id) => specialMoment.set(id, m));
+    const pts = m.result.rows;
+    const eq = equilibriumUnder(arm, m.result.name);
+    const second = firstCrossing((x) => gzS(x) - arm(x), 0, eq + 0.5, gzEnd, 0.05);
+    const to = Math.min(second ?? gzEnd, floodAngle);
+    const res = to > eq ? integrateDeg((x) => gzS(x) - arm(x), eq, to) : 0;
+    const r1 = ge('AH-1', `Residual area from φe ${eq.toFixed(2)}° to ${second !== null && second < floodAngle ? 'φc' : 'φf'} ${to.toFixed(1)}°`, 'IS 2008 B 2.7.4.2', 'm·rad', 0.07, res);
+    r1.viz = [{ type: 'arm', label: m.result.name, points: pts }, { type: 'residArea', from: eq, to: Math.max(eq, to), points: pts }];
+    special.set('AH-1', r1);
+    let maxRes = -Infinity;
+    for (let x = eq; x <= to + 1e-9; x += 0.1) maxRes = Math.max(maxRes, gzS(x) - arm(x));
+    special.set('AH-2', ge('AH-2', 'Maximum residual righting lever (GZ − heeling lever)', 'IS 2008 B 2.7.4.3', 'm', 0.2, maxRes));
+    const half = firstCrossing(gzS, 0.5 * gzMax, 0, gzMaxAngle, 0.05) ?? gzMaxAngle;
+    const lim = Math.min(half, deckEdgeAngle, 15);
+    const r3 = le('AH-3', `Static heel φe ≤ least of 50 % GZmax angle (${half.toFixed(1)}°), deck-edge angle (${deckEdgeAngle.toFixed(1)}°), 15°`, 'IS 2008 B 2.7.4.4', '°', lim, eq);
+    r3.viz = [{ type: 'arm', label: m.result.name, points: pts }, { type: 'vline', angle: eq, label: `φe ${eq.toFixed(2)}°` }];
+    special.set('AH-3', r3);
+    special.set('AH-4', ge('AH-4', `Freeboard at stern on centreline ≥ 0.005·L (L = ${a.lLL} m)`, 'IS 2008 B 2.7.4.5', 'm', 0.005 * a.lLL, sternFreeboard(a.xStern)));
+  }
+
+  function computeTowing() {
+    const t = ops.towing;
+    if (!t) throw new EngineError('NO_OPS_DATA', 'enter the towing data (bollard pull, propulsion type, towing point) in the load case (Operation data).');
+    const ct = towCT(t);
+    if (!Number.isFinite(ct)) throw new EngineError('NO_OPS_DATA', 'enter C_T agreed with the Administration for this propulsion arrangement.');
+    const self = (x: number) => selfTrippingLever(t, disp, x);
+    const ms = builtMoment('tow-self', 'Self-tripping heeling lever', 'HLφ = BP·C_T·(h·cos φ − r·sin φ) / (g·Δ)', [
+      lcIn('BP', 'Load case: bollard pull', t.bp, `t (= ${(t.bp * 9.81).toFixed(1)} kN)`), lcIn('C_T', t.propulsion === 'CONVENTIONAL' ? 'Conventional propulsion' : t.propulsion === 'AZIMUTH' ? `0.90/(1 + l/L_LL), not less than ${t.azimuthMin}` : 'Agreed with Administration', ct, ''),
+      lcIn('h', 'Towing point to propulsion centreline', t.zTow - t.zProp, 'm'), lcIn('r', 'Towing point off centreline', t.r, 'm'), lcIn('Δ', 'Load case: displacement', disp, 't')],
+      self, 'IS 2008 B 2.8.2.1');
+    specialMoment.set('TOW-1', ms);
+    const eq = equilibriumUnder(self, ms.result.name);
+    const second = firstCrossing((x) => gzS(x) - self(x), 0, eq + 0.5, gzEnd, 0.05);
+    const to = Math.min(second ?? gzEnd, floodAngle);
+    const A = to > eq ? integrateDeg((x) => gzS(x) - self(x), eq, to) : 0;
+    const B = eq > 0 ? integrateDeg((x) => self(x) - gzS(x), 0, eq) : 0;
+    const r1 = ge('TOW-1', `Self-tripping: area A ${A.toFixed(4)} (φe ${eq.toFixed(2)}° to ${to.toFixed(1)}°) ÷ area B ${B.toFixed(4)} (0 to φe)`, 'IS 2008 B 2.8.4.2', '', 1, B > 0 ? A / B : Infinity);
+    r1.passed = A > B;
+    r1.viz = [{ type: 'arm', label: ms.result.name, points: ms.result.rows }, { type: 'residArea', from: eq, to: Math.max(eq, to), points: ms.result.rows }];
+    special.set('TOW-1', r1);
+
+    const f = vessel.depth - draftMS;
+    const tt = towTripping(t, L, vessel.breadth, f, draftMean, lc.seaDensity, disp, draftMS);
+    const mt = builtMoment('tow-trip', 'Tow-tripping heeling lever', 'HLφ = C1·C2·γ·V²·A_P·(h·cos φ − r·sin φ + C3·d) / (2·g·Δ)', [
+      lcIn('C1', `2.8·(Ls/Lpp − 0.1), 0.10 … 1.00 (Ls = ${t.ls} m)`, tt.C1, ''), lcIn('φD', 'arctan(2f/B), angle to deck edge', tt.phiD, '°'),
+      lcIn('γ', 'Load case: water density', lc.seaDensity, 't/m³'), lcIn('V', 'Lateral velocity (5 kn)', tt.V, 'm/s'), lcIn('A_P', 'Load case: underwater lateral area', t.ap, 'm²'),
+      lcIn('h', 'Waterline to towing point', tt.h, 'm'), lcIn('d', 'Load case: mean draught', draftMean, 'm'), lcIn('Δ', 'Load case: displacement', disp, 't')],
+      tt.lever, 'IS 2008 B 2.8.2.2. C2 = φ/(3·φD) + 0.5 (≥ 1.00) and C3 = 0.26·φ/φD + 0.30 (0.50 … 0.83) vary with heel.');
+    specialMoment.set('TOW-2', mt);
+    const eqT = firstCrossing((x) => gzS(x) - tt.lever(x), 0, 0, gzEnd, 0.05);
+    const r2 = le('TOW-2', `Tow-tripping: first intersection φe ${eqT === null ? '(none)' : eqT.toFixed(2) + '°'} < down-flooding angle φf`, 'IS 2008 B 2.8.4.3', '°', floodAngle, eqT ?? Infinity);
+    r2.passed = eqT !== null && eqT < floodAngle;
+    if (eqT === null) r2.explanation = 'The tow-tripping heeling lever exceeds the righting lever at all angles.';
+    r2.viz = [{ type: 'arm', label: mt.result.name, points: mt.result.rows }, ...(eqT !== null ? [{ type: 'vline' as const, angle: eqT, label: `Tow-tripping φe ${eqT.toFixed(2)}°` }] : [])];
+    special.set('TOW-2', r2);
+    special.set('TOW-3', ge('TOW-3', `Freeboard at stern ≥ 0.005·L_LL (L_LL = ${t.lLL} m)`, 'IS 2008 B 2.8.6.2', 'm', 0.005 * t.lLL, sternFreeboard(0)));
+  }
+
+  function computeEscort() {
+    const e = ops.escort;
+    if (!e || !(e.hl > 0)) throw new EngineError('NO_OPS_DATA', 'enter the maximum escort heeling lever (from trials, model tests or simulation) in the load case (Operation data).');
+    const arm = () => e.hl;
+    const m = builtMoment('escort', 'Escort heeling lever (maximum, constant)', 'HL = constant (2.8.3.5)', [lcIn('HL', 'Load case: from trials / model tests / simulation', e.hl, 'm')], arm, 'IS 2008 B 2.8.3');
+    ['ESC-1', 'ESC-2', 'ESC-3'].forEach((id) => specialMoment.set(id, m));
+    const eq = equilibriumUnder(arm, m.result.name);
+    const A = eq < 20 ? integrateDeg(gzS, eq, 20) : 0;
+    const B = eq < 20 ? e.hl * (20 - eq) * DEG : 0;
+    const second = firstCrossing((x) => gzS(x) - e.hl, 0, eq + 0.5, gzEnd, 0.05);
+    const phid = Math.min(second ?? Infinity, floodAngle, 40);
+    const C = integrateDeg(gzS, 0, phid);
+    const D = e.hl * phid * DEG;
+    const r1 = ge('ESC-1', `Area A ${A.toFixed(4)} ÷ area B ${B.toFixed(4)} (φe ${eq.toFixed(2)}° to 20°)`, 'IS 2008 B 2.8.4.4.1', '', 1.25, B > 0 ? A / B : Infinity);
+    r1.viz = [{ type: 'arm', label: m.result.name, points: m.result.rows }, { type: 'area', from: eq, to: Math.max(eq, 20) }];
+    special.set('ESC-1', r1);
+    const r2 = ge('ESC-2', `Area C ${C.toFixed(4)} ÷ area D ${D.toFixed(4)} (0 to φd ${phid.toFixed(1)}°)`, 'IS 2008 B 2.8.4.4.2', '', 1.4, D > 0 ? C / D : Infinity);
+    special.set('ESC-2', r2);
+    const r3 = le('ESC-3', 'Equilibrium heel φe ≤ 15°', 'IS 2008 B 2.8.4.4.3', '°', 15, eq);
+    r3.viz = [{ type: 'vline', angle: eq, label: `φe ${eq.toFixed(2)}°` }];
+    special.set('ESC-3', r3);
+  }
+
+  /** GZ curve of this condition without the hook-load weight (lifting, loss of hook load). */
+  function withoutHookLoad() {
+    const lift = ops.lifting;
+    const id = lift?.hookWeightId;
+    const hook = lc.weights.find((w) => w.id === id);
+    if (!lift || !hook) throw new EngineError('NO_OPS_DATA', 'choose which weight item is the hook load (Operation data → Lifting).');
+    const r = calculate(vessel, { ...lc, weights: lc.weights.filter((w) => w.id !== id), criteriaGroups: [], ops: {} });
+    return { r, hook, gz: r.gzAt! };
+  }
+
+  function computeLift295() {
+    const lift = ops.lifting!;
+    const { gz: gz2raw, hook } = withoutHookLoad();
+    const s = side;
+    const G2 = (x: number) => s * gz2raw(s * x);   // after loss, in lift-side coordinates
+    const start = Math.abs(heel);
+    const e2 = firstCrossing(G2, 0, start, -maxTableAngle, 0.05);
+    if (e2 === null) throw new EngineError('LIFT_LOSS', 'no equilibrium found after loss of the hook load.');
+    const A1 = -integrateDeg(G2, e2, start);
+    const second = firstCrossing(G2, 0, e2 - 0.5, -maxTableAngle, 0.05);
+    const lim = Math.max(-floodAngle, second ?? -maxTableAngle);
+    const A2 = integrateDeg(G2, lim, e2);
+    const req = lift.exposed ? 1.4 : 1.0;
+    const r = ge('LIFT-L1', `Area 2 ${A2.toFixed(4)} (φe2 ${e2.toFixed(2)}° to ${lim.toFixed(1)}°) ÷ Area 1 ${A1.toFixed(4)}, hook load ${hook.weight} t lost (${lift.exposed ? 'exposed' : 'not exposed'} waters)`, 'IS 2008 B 2.9.5.1', '', req, A1 > 0 ? A2 / A1 : Infinity);
+    r.passed = A2 > req * A1;
+    special.set('LIFT-L1', r);
+  }
+
+  function liftAltData() {
+    const lift = ops.lifting;
+    if (!lift || !(lift.pl && lift.pl > 0) || lift.y === undefined) throw new EngineError('NO_OPS_DATA', 'enter the lift load P_L, its transverse distance y and the counter-ballast moment (Operation data → Lifting).');
+    const sL: 1 | -1 = lift.y < 0 ? -1 : 1;
+    const G = (x: number) => sL * gz(sL * x);
+    const cbm = Math.abs(lift.cbm ?? 0);
+    const chl1 = (x: number) => ((lift.pl! * Math.abs(lift.y!) - cbm) * Math.cos(x * DEG)) / disp;
+    const f0 = G(0) - chl1(0);
+    const eq = firstCrossing((x) => G(x) - chl1(x), 0, 0, f0 < 0 ? gzEnd : -maxTableAngle, 0.05);
+    if (eq === null) throw new EngineError('LIFT_ALT', 'the lift heeling lever exceeds the righting lever at all angles.');
+    return { lift, sL, G, cbm, chl1, eq };
+  }
+
+  function computeLiftAlt() {
+    const { lift, G, chl1, eq, cbm } = liftAltData();
+    const m = builtMoment('lift-alt', 'Lift heeling lever CHL1', 'CHL1 = (P_L·y − CBM)·cos φ / Δ', [
+      lcIn('P_L', 'Load case: lift load', lift.pl!, 't'), lcIn('y', 'Load case: transverse distance of the lift', Math.abs(lift.y!), 'm'),
+      lcIn('CBM', 'Load case: counter-ballast moment', cbm, 't·m'), lcIn('Δ', 'Load case: displacement with lift load', disp, 't')], chl1,
+      'IS 2008 B 2.9.6.2–.3. The lift load must be in the loading condition on the centreline; its transverse moment is applied here.');
+    specialMoment.set('LIFT-A1', m); specialMoment.set('LIFT-A2', m);
+    const plY = lift.pl! * Math.abs(lift.y!);
+    const fMin = vessel.depth - Math.max(draftAP, draftFP);
+    const ml = liftThreshold(disp, gmFluid, fMin, vessel.breadth);
+    warnings.push({ code: 'LIFT_THRESHOLD', message: `IS 2008 B 2.9.1.2: lift heeling moment P_L·y = ${plY.toFixed(1)} t·m ${plY > ml ? '>' : '≤'} M_L = 0.67·Δ·GM·(f/B) = ${ml.toFixed(1)} t·m${plY > ml ? ': section 2.9 applies.' : ': section 2.9 is required only for lifting own structures or when the VCG rises by more than 1 %.'}` });
+    let maxAng = eq, best = -Infinity;
+    for (let x = eq; x <= 40 + 1e-9 && x <= gzEnd; x += 0.1) { const d = G(x) - chl1(x); if (d > best) { best = d; maxAng = x; } }
+    const to = Math.min(40, maxAng);
+    const res = to > eq ? integrateDeg((x) => G(x) - chl1(x), eq, to) : 0;
+    const req = lift.exposed ? 0.08 : 0.053;
+    const r1 = ge('LIFT-A1', `Residual area from φe ${eq.toFixed(2)}° to ${to.toFixed(1)}° (lesser of 40° and angle of maximum residual lever), ${lift.exposed ? 'exposed' : 'not exposed'} waters`, 'IS 2008 B 2.9.7.1.1', 'm·rad', req, res);
+    r1.viz = [{ type: 'arm', label: m.result.name, points: m.result.rows }, { type: 'residArea', from: Math.max(0, eq), to: Math.max(eq, to), points: m.result.rows }];
+    special.set('LIFT-A1', r1);
+    const app = lift.applianceMaxHeel ?? vessel.crane?.maxHeel ?? 10;
+    const lim = Math.min(10, deckEdgeAngle, app);
+    special.set('LIFT-A2', le('LIFT-A2', `Equilibrium heel φe ≤ least of 10°, deck immersion (${deckEdgeAngle.toFixed(1)}°), appliance limit (${app}°)`, 'IS 2008 B 2.9.7.1.2', '°', lim, Math.abs(eq)));
+  }
+
+  function computeLiftAltLoss() {
+    const { lift, sL, eq, cbm } = liftAltData();
+    const { gz: gz1raw, r: r1c } = withoutHookLoad();
+    const G1 = (x: number) => sL * gz1raw(sL * x);
+    const dispNo = disp - lift.pl!;
+    if (Math.abs(r1c.displacement - dispNo) > 0.5) warnings.push({ code: 'LIFT_HOOK_MISMATCH', message: `Hook-load weight item and P_L differ: Δ without hook load ${r1c.displacement.toFixed(1)} t vs Δ − P_L ${dispNo.toFixed(1)} t.` });
+    const cbhl2 = (x: number) => (-cbm * Math.cos(x * DEG)) / dispNo; // towards the side opposite the lift
+    const x0 = firstCrossing((x) => G1(x) - cbhl2(x), 0, eq, -maxTableAngle, 0.05);
+    if (x0 === null) throw new EngineError('LIFT_LOSS', 'no equilibrium found after loss of the hook load.');
+    const a1 = eq > x0 ? integrateDeg((x) => G1(x) - cbhl2(x), x0, eq) : 0;
+    const second = firstCrossing((x) => G1(x) - cbhl2(x), 0, x0 - 0.5, -maxTableAngle, 0.05);
+    const lim = Math.max(-floodAngle, second ?? -maxTableAngle);
+    const a2 = integrateDeg((x) => cbhl2(x) - G1(x), lim, x0);
+    const K = lift.exposed ? 0.037 : 0;
+    const r = ge('LIFT-A3', `Area 2 ${a2.toFixed(4)} − Area 1 ${a1.toFixed(4)} (CBHL2 = CBM·cos φ/(Δ − P_L), to ${lim.toFixed(1)}°)`, 'IS 2008 B 2.9.7.2', 'm·rad', K, a2 - a1);
+    r.passed = a2 - a1 > K;
+    special.set('LIFT-A3', r);
+  }
+
   const SPECIAL_SOURCE: Record<string, () => void> = {
+    'AH-1': computeAnchor, 'AH-2': computeAnchor, 'AH-3': computeAnchor, 'AH-4': computeAnchor,
+    'TOW-1': computeTowing, 'TOW-2': computeTowing, 'TOW-3': computeTowing,
+    'ESC-1': computeEscort, 'ESC-2': computeEscort, 'ESC-3': computeEscort,
+    'LIFT-L1': computeLift295, 'LIFT-A1': computeLiftAlt, 'LIFT-A2': computeLiftAlt, 'LIFT-A3': computeLiftAltLoss,
     'PAX-1': computePaxCrowd, 'PAX-2': computePaxTurn, 'GRAIN-1': computeGrain, 'GRAIN-2': computeGrain,
     'PONT-1': computePontoon, 'PONT-2': computePontoon, 'MODU-1': computeModu, 'MODU-2': computeModu, 'CRANE-5': computeCrane,
     'OSV-1': computeOSV1, 'IS-2.3-HEEL': computeWeather, 'IS-2.3-AREA': computeWeather,
@@ -728,7 +921,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
   const appliedCriteria = groups.flatMap((g) => g.criteria).filter((c) => (seen.has(c.code) ? false : (seen.add(c.code), true)));
   const overallPass = groups.length > 0 && groups.every((g) => g.passed) && !warnings.some((w) => w.code === 'NEGATIVE_INITIAL_GM');
 
-  return {
+  const result: Results = {
     displacement: disp,
     deadweight: disp - vessel.lightship.weight,
     lcg, tcg, kg, sumFsm, fsc, kgFluid,
@@ -738,6 +931,8 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     gzMax, gzMaxAngle, avs,
     gzTable, gzCurve, tanks, summary, criteria: appliedCriteria, groups, weather, fifi, crane, warnings, overallPass,
   };
+  Object.defineProperty(result, 'gzAt', { value: gz, enumerable: false });
+  return result;
 }
 
 function cmp(d: CriterionDef, description: string, regulation: string, unit: string, actual: number): CriterionResult {

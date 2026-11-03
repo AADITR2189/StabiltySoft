@@ -1,4 +1,6 @@
 import type { GroupDef, LoadCase, Results, TankInput, Vessel, WeightItem } from '../engine/types';
+import { useState } from 'react';
+import { permissibleTensions, type TensionRow } from '../engine/permissibleTension';
 import { newId } from '../store';
 import { BUILTIN_GROUPS, DEFAULT_GROUP_IDS } from '../engine/criteriaGroups';
 import { f } from './format';
@@ -241,7 +243,15 @@ function OperationPanel({ lc, vessel, set }: { lc: LoadCase; vessel: Vessel; set
   const grain = ops.grain ?? { holds: [], deckEdgeLimit: true };
   const modu = ops.modu ?? { unitType: 'SURFACE' as const, windSpeed: 36, coefficient: 1.0 };
   const lift = ops.lifting ?? { exposed: false, hs: 0 };
-  const show = { wx: has('IS2008_WEATHER', 'IMO_A749'), pax: has('IS2008_PAX'), grain: has('GRAIN'), modu: has('MODU'), lift: has('LIFT_293') };
+  const show = {
+    wx: has('IS2008_WEATHER', 'IMO_A749'), pax: has('IS2008_PAX'), grain: has('GRAIN'), modu: has('MODU'),
+    lift: has('LIFT_293', 'LIFT_295', 'LIFT_297', 'LIFT_297_LOSS'), liftAlt: has('LIFT_297', 'LIFT_297_LOSS'), hook: has('LIFT_295', 'LIFT_297_LOSS'),
+    ah: has('ANCHOR_HANDLING'), tow: has('TOWING'), esc: has('ESCORT'),
+  };
+  const ah = ops.anchor ?? { fp: 0, fd: 0, bp: 0, alpha: 5, h: 0, y0: 0, x: 0, xStern: 0, zStern: vessel.depth, lLL: vessel.lbp };
+  const tow = ops.towing ?? { bp: 0, propulsion: 'CONVENTIONAL' as const, azimuthMin: 0.7 as const, l: 0, zTow: 0, zProp: 0, r: 0, ls: 0, ap: 0, lLL: vessel.lbp };
+  const setAh = (p: Partial<typeof ah>) => setOps({ anchor: { ...ah, ...p } });
+  const setTow = (p: Partial<typeof tow>) => setOps({ towing: { ...tow, ...p } });
   if (!Object.values(show).some(Boolean)) return null;
   return (
     <section className="panel">
@@ -313,13 +323,115 @@ function OperationPanel({ lc, vessel, set }: { lc: LoadCase; vessel: Vessel; set
         )}
         {show.lift && (
           <fieldset className="ops-box">
-            <legend>Lifting (IS Code B 2.9.3)</legend>
+            <legend>Lifting (IS Code B 2.9)</legend>
             <label className="check inline"><input type="checkbox" checked={lift.exposed} onChange={(e) => setOps({ lifting: { ...lift, exposed: e.target.checked } })} /><span>Lifting in exposed waters</span></label>
             {lift.exposed && <label>Highest significant wave height Hs (m)<NumInput value={lift.hs} onCommit={(v) => setOps({ lifting: { ...lift, hs: v } })} /></label>}
-            <p className="muted small">Minimum freeboard: 0.50 m in non-exposed waters; in exposed waters 1.00 m or 0.75·Hs, whichever is greater.</p>
+            {show.liftAlt && (
+              <>
+                <label>Lift load P_L (t)<NumInput value={lift.pl ?? 0} onCommit={(v) => setOps({ lifting: { ...lift, pl: v } })} /></label>
+                <label>Transverse distance y (m, − port)<NumInput value={lift.y ?? 0} onCommit={(v) => setOps({ lifting: { ...lift, y: v } })} /></label>
+                <label>Counter-ballast moment CBM (t·m)<NumInput value={lift.cbm ?? 0} onCommit={(v) => setOps({ lifting: { ...lift, cbm: v } })} /></label>
+                <label>Lifting appliance allowable heel (°)<NumInput value={lift.applianceMaxHeel ?? vessel.crane?.maxHeel ?? 10} onCommit={(v) => setOps({ lifting: { ...lift, applianceMaxHeel: v } })} /></label>
+              </>
+            )}
+            {(show.hook || show.liftAlt) && (
+              <label>Hook load weight item
+                <select value={lift.hookWeightId ?? ''} onChange={(e) => setOps({ lifting: { ...lift, hookWeightId: e.target.value || undefined } })}>
+                  <option value="">Choose…</option>
+                  {lc.weights.map((w) => <option key={w.id} value={w.id}>{w.description} ({w.weight} t)</option>)}
+                </select>
+              </label>
+            )}
+            <p className="muted small">
+              2.9.3: freeboard 0.50 m (not exposed) or max(1.00 m, 0.75·Hs). Alternative method (2.9.6/2.9.7): put the lift load in the weights on the centreline at its height;
+              its transverse moment P_L·y and the counter-ballast moment are applied as heeling levers. Loss of hook load: the chosen weight item is removed to get the condition after the loss.
+            </p>
+          </fieldset>
+        )}
+        {show.ah && (
+          <fieldset className="ops-box wide">
+            <legend>Anchor handling (IS Code B 2.7)</legend>
+            <div className="ops-grid">
+              <label>Permissible tension Fp (t)<NumInput value={ah.fp} onCommit={(v) => setAh({ fp: v })} /></label>
+              <label>Design max. tension Fd (t)<NumInput value={ah.fd} onCommit={(v) => setAh({ fd: v })} /></label>
+              <label>Bollard pull BP (t)<NumInput value={ah.bp} onCommit={(v) => setAh({ bp: v })} /></label>
+              <label>Horizontal angle α (°)<NumInput value={ah.alpha} onCommit={(v) => setAh({ alpha: v })} /></label>
+              <label>h: propulsion centre to pin top (m)<NumInput value={ah.h} onCommit={(v) => setAh({ h: v })} /></label>
+              <label>y0: centreline to inner pin (m)<NumInput value={ah.y0} onCommit={(v) => setAh({ y0: v })} /></label>
+              <label>x: stern to towing pin (m)<NumInput value={ah.x} onCommit={(v) => setAh({ x: v })} /></label>
+              <label>Stern roller X from AP (m)<NumInput value={ah.xStern} onCommit={(v) => setAh({ xStern: v })} /></label>
+              <label>Stern roller height above base (m)<NumInput value={ah.zStern} onCommit={(v) => setAh({ zStern: v })} /></label>
+              <label>Load Line length L (m)<NumInput value={ah.lLL} onCommit={(v) => setAh({ lLL: v })} /></label>
+              <label>Deck height at stern above base (m)<NumInput value={ops.sternDeckZ ?? vessel.depth} onCommit={(v) => setOps({ sternDeckZ: v })} /></label>
+            </div>
+            <TensionTable vessel={vessel} lc={lc} />
+          </fieldset>
+        )}
+        {show.tow && (
+          <fieldset className="ops-box wide">
+            <legend>Towing (IS Code B 2.8.2)</legend>
+            <div className="ops-grid">
+              <label>Bollard pull BP (t)<NumInput value={tow.bp} onCommit={(v) => setTow({ bp: v })} /></label>
+              <label>Propulsion
+                <select value={tow.propulsion} onChange={(e) => setTow({ propulsion: e.target.value as typeof tow.propulsion })}>
+                  <option value="CONVENTIONAL">Conventional, non-azimuth (C_T 0.5)</option>
+                  <option value="AZIMUTH">Azimuth at a single point</option>
+                  <option value="OTHER">Other (C_T agreed with Administration)</option>
+                </select>
+              </label>
+              {tow.propulsion === 'AZIMUTH' && (
+                <label>Arrangement
+                  <select value={String(tow.azimuthMin)} onChange={(e) => setTow({ azimuthMin: Number(e.target.value) as 0.7 | 0.5 })}>
+                    <option value="0.7">ASD over stern / tractor over bow (C_T ≥ 0.7)</option>
+                    <option value="0.5">ASD over bow / tractor over stern (C_T ≥ 0.5)</option>
+                  </select>
+                </label>
+              )}
+              {tow.propulsion === 'OTHER' && <label>C_T<NumInput value={tow.ctOther ?? 0.5} step={0.01} onCommit={(v) => setTow({ ctOther: v })} /></label>}
+              <label>l: towing point to propulsion unit (m)<NumInput value={tow.l} onCommit={(v) => setTow({ l: v })} /></label>
+              <label>Towing point height above base (m)<NumInput value={tow.zTow} onCommit={(v) => setTow({ zTow: v })} /></label>
+              <label>Propulsion centreline above base (m)<NumInput value={tow.zProp} onCommit={(v) => setTow({ zProp: v })} /></label>
+              <label>r: towing point off centreline (m)<NumInput value={tow.r} onCommit={(v) => setTow({ r: v })} /></label>
+              <label>Ls: AP to towing point (m)<NumInput value={tow.ls} onCommit={(v) => setTow({ ls: v })} /></label>
+              <label>A_P: underwater lateral area (m²)<NumInput value={tow.ap} onCommit={(v) => setTow({ ap: v })} /></label>
+              <label>Load Line length L_LL (m)<NumInput value={tow.lLL} onCommit={(v) => setTow({ lLL: v })} /></label>
+              <label>Deck height at stern above base (m)<NumInput value={ops.sternDeckZ ?? vessel.depth} onCommit={(v) => setOps({ sternDeckZ: v })} /></label>
+            </div>
+          </fieldset>
+        )}
+        {show.esc && (
+          <fieldset className="ops-box">
+            <legend>Escort (IS Code B 2.8.3)</legend>
+            <label>Maximum escort heeling lever HL (m)<NumInput value={ops.escort?.hl ?? 0} step={0.001} onCommit={(v) => setOps({ escort: { hl: v } })} /></label>
+            <p className="muted small">From full-scale trials, model tests or numerical simulation over the escort speed range (typically 6–10 kn), taken constant with heel.</p>
           </fieldset>
         )}
       </div>
     </section>
+  );
+}
+
+/** IS 2008 B 2.7.3: permissible tension for α = 5°…90° (direct stability calculation). */
+function TensionTable({ vessel, lc }: { vessel: Vessel; lc: LoadCase }) {
+  const [rows, setRows] = useState<TensionRow[] | null>(null);
+  const [err, setErr] = useState('');
+  const run = () => {
+    setErr('');
+    try { setRows(permissibleTensions(vessel, lc)); } catch (e) { setErr((e as Error).message); setRows(null); }
+  };
+  return (
+    <div className="tension">
+      <button type="button" onClick={run}>Calculate permissible tension (α = 5° … 90°)</button>
+      {err && <p className="fail-text small">{err}</p>}
+      {rows && (
+        <div className="table-wrap">
+          <table className="grid">
+            <thead><tr><th className="num">α °</th><th className="num">Permissible tension Fp (t)</th><th>Limited by</th></tr></thead>
+            <tbody>{rows.map((r) => <tr key={r.alpha}><td className="num">{r.alpha}</td><td className="num">{r.fp.toFixed(1)}</td><td className="wrap small">{r.limitedBy}</td></tr>)}</tbody>
+          </table>
+          <p className="muted small">Largest tension at each α (not above Fd) for which all criteria of 2.7.4 are met in this loading condition; Fv is added at the stern for each tension.</p>
+        </div>
+      )}
+    </div>
   );
 }

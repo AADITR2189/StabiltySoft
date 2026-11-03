@@ -282,3 +282,7 @@ button.tiny { font-size: 12px; padding: 1px 8px; margin: 2px 4px 2px 0; }
 .ops-box legend { color: var(--powder); font-weight: 600; font-size: 13px; padding: 0 4px; }
 .ops-box label { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
 .ops-box label.check { justify-content: flex-start; color: var(--text); }
+
+.ops-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 16px; }
+.tension { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; margin-top: 4px; }
+.tension .table-wrap { width: 100%; }
