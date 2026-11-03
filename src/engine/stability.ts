@@ -216,6 +216,41 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     momentCache.set(id, out);
     return out;
   }
+  /** Sum of several moments: arm_total(θ) = Σ arm_i(θ). */
+  function combinedMoment(ids: string[], key: string) {
+    const hit = momentCache.get(key);
+    if (hit) return hit;
+    const parts = ids.map(userMoment);
+    if (parts.length === 1) return parts[0];
+    const arm = (deg: number) => parts.reduce((sum, x) => sum + x.arm(deg), 0);
+    const allMoments = parts.every((x) => x.result.rows.every((r) => r.moment !== null));
+    const out = {
+      arm,
+      result: {
+        id: key,
+        name: `Combined heeling moment (${parts.map((x) => x.result.name).join(' + ')})`,
+        formula: parts.map((x) => x.result.name).join(' + '),
+        inputs: parts.map((x) => ({ name: x.result.name, source: 'Connected moment (arm at 0°)', value: x.arm(0), unit: 'm' })),
+        rows: tableAngles().map((a) => ({
+          heel: a,
+          moment: allMoments ? parts.reduce((sum, x) => sum + x.arm(a) * disp, 0) : null,
+          arm: arm(a),
+        })),
+        note: 'Combined heeling arm = sum of the heeling arms of all moments connected to the group.',
+      },
+    };
+    momentCache.set(key, out);
+    return out;
+  }
+  // moments connected to the group currently being evaluated
+  let currentGroupMomentIds: string[] = [];
+  let currentGroupKey = '';
+  function groupMoment() {
+    if (!currentGroupMomentIds.length) {
+      throw new EngineError('NO_GROUP_MOMENT', 'this group uses "the group\'s combined heeling moment", but no heeling moment is connected to the group.');
+    }
+    return combinedMoment(currentGroupMomentIds, `GROUP:${currentGroupKey}`);
+  }
   function tableAngles(): number[] {
     const set = new Set<number>(kn.angles.filter((a) => a <= gzEnd));
     for (let a = 0; a <= gzEnd + 1e-9; a += 5) set.add(a);
@@ -268,7 +303,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
       case 'HEEL_MOMENT':
       case 'RESID_AREA':
       case 'RESID_GZMAX': {
-        const m = userMoment(p.momentId ?? '');
+        const m = (p.momentId ?? 'GROUP') === 'GROUP' ? groupMoment() : userMoment(p.momentId!);
         const pts = m.result.rows.map((x) => ({ heel: x.heel, arm: x.arm }));
         const eq = equilibriumUnder(m.arm, m.result.name);
         if (d.kind === 'HEEL_MOMENT') {
@@ -455,6 +490,9 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
   for (const g of allGroups.filter((x) => selectedIds.includes(x.id))) {
     const list: CriterionResult[] = [];
     let error: string | undefined;
+    currentGroupMomentIds = (g.momentIds ?? []).filter((id) => (library.moments ?? []).some((m) => m.id === id));
+    currentGroupKey = g.id;
+    if ((g.momentIds ?? []).length !== currentGroupMomentIds.length) error = 'A heeling moment connected to this group no longer exists.';
     for (const cid of g.criterionIds) {
       const def = allCriteria.find((c) => c.id === cid);
       if (!def) { error = `Criterion ${cid} no longer exists.`; continue; }
@@ -501,9 +539,20 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
           rows: constRows(c.lw), note: 'Crane and lifted load are included in the loading condition; only wind acts as a heeling moment.' });
         arms.push(() => c.lw);
       }
+      // group's connected moments: combined first (used for the residual), then each one
+      if (currentGroupMomentIds.length) {
+        if (currentGroupMomentIds.length > 1) {
+          const c = groupMoment();
+          moments.push(c.result); arms.push(c.arm);
+        }
+        for (const id of currentGroupMomentIds) {
+          const um = userMoment(id);
+          moments.push(um.result); arms.push(um.arm);
+        }
+      }
       for (const cr of list) {
         const id = allCriteria.find((x) => x.id === cr.id)?.params?.momentId;
-        if (id && !moments.some((m) => m.id === id)) {
+        if (id && id !== 'GROUP' && !moments.some((m) => m.id === id)) {
           const um = userMoment(id);
           moments.push(um.result);
           arms.push(um.arm);

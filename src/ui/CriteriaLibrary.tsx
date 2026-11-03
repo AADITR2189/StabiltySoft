@@ -22,6 +22,7 @@ interface Props {
 
 export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, saveGroup, removeGroup, saveMoment, removeMoment, preview, lcName }: Props) {
   const moments = lib.moments ?? [];
+  const [editing, setEditing] = useState<GroupDef | null>(null);
   const all = [...BUILTIN_CRITERIA, ...lib.criteria];
   const unitOf = (c: CriterionDef) =>
     c.kind === 'SPECIAL' ? (c.id.includes('AREA') || c.id === 'OSV-1' || c.id === 'CRANE-3' ? 'm·rad' : c.id === 'CRANE-2' ? '' : '°') : CRITERION_KINDS.find((k) => k.kind === c.kind)?.unit ?? '';
@@ -29,12 +30,17 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
   return (
     <div className="stack">
       <section className="panel">
-        <div className="panel-head"><h2>How this works</h2></div>
-        <p className="muted small">
-          1. Create your own intact stability criteria below, or use the built-in ones. 2. Build a stability group by clicking criteria.
-          3. Select the group in a load case (Load Case screen). Each group is checked on its own and gets its own GZ diagram with its criteria marked.
-          Your criteria are labelled “User-defined”: they are not statutory unless approved by the Administration or class.
-        </p>
+        <div className="panel-head"><h2>How moments, criteria and groups connect</h2></div>
+        <div className="flow" aria-label="Moments connect to groups; criteria belong to groups; groups are selected per load case">
+          <div className="flow-box"><strong>1 · Heeling moments</strong><span>Formula + symbols linked to the load case or entered values. Each gives a moment table (moment and heeling arm at every heel angle).</span></div>
+          <div className="flow-arrow" aria-hidden="true">→</div>
+          <div className="flow-box"><strong>2 · Criteria</strong><span>Area, GZ, GM, heel… Moment criteria (heel at equilibrium, residual area, residual arm) use either <em>the group’s combined moment</em> or one chosen moment.</span></div>
+          <div className="flow-arrow" aria-hidden="true">→</div>
+          <div className="flow-box"><strong>3 · Stability group</strong><span>Click criteria to include them. Click moments to connect them: the group’s combined moment is their <em>sum</em>, arm = Σ Mᵢ / Δ.</span></div>
+          <div className="flow-arrow" aria-hidden="true">→</div>
+          <div className="flow-box"><strong>4 · Load case</strong><span>Tick the group. Stability Criteria then shows the group’s GZ diagram, GZ table (GZ, each arm, total, residual) and every moment table.</span></div>
+        </div>
+        <p className="muted small">Your own criteria and groups are labelled “User-defined”: they are not statutory unless approved by the Administration or class.</p>
       </section>
       <MomentBuilder onSave={saveMoment} preview={preview} lcName={lcName} />
       {moments.length > 0 && (
@@ -77,7 +83,7 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
           </table>
         </div>
       </section>
-      <GroupBuilder all={all} onSave={saveGroup} />
+      <GroupBuilder key={editing?.id ?? 'new'} all={all} moments={moments} onSave={(g) => { saveGroup(g); setEditing(null); }} editing={editing} onCancel={() => setEditing(null)} />
       <section className="panel">
         <div className="panel-head"><h2>Stability groups</h2></div>
         <div className="group-cards">
@@ -85,8 +91,17 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
             <div key={g.id} className="group-card">
               <div className="panel-head">
                 <div><strong>{g.name}</strong><div className="muted small">{g.regulation}</div></div>
-                {g.builtin ? <span className="chip-static">Built-in</span> : <ConfirmDelete label={`Delete group ${g.name}`} onConfirm={() => removeGroup(g.id)} />}
+                {g.builtin ? <span className="chip-static">Built-in</span> : (
+                  <span className="confirm">
+                    <button className="ghost" onClick={() => { setEditing(g); window.scrollTo({ top: 0 }); document.getElementById('group-builder')?.scrollIntoView({ behavior: 'smooth' }); }}>Edit</button>
+                    <ConfirmDelete label={`Delete group ${g.name}`} onConfirm={() => removeGroup(g.id)} />
+                  </span>
+                )}
               </div>
+              {(g.momentIds ?? []).length > 0 && (
+                <p className="small"><span className="muted">Connected moments (combined = sum): </span>
+                  {(g.momentIds ?? []).map((id) => moments.find((m) => m.id === id)?.name ?? 'missing moment').join(' + ')}</p>
+              )}
               <ol className="crit-list">
                 {g.criterionIds.map((id) => <li key={id}>{all.find((c) => c.id === id)?.name ?? <span className="fail-text">missing criterion</span>}</li>)}
               </ol>
@@ -99,7 +114,7 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
 }
 
 function CriterionForm({ onSave, moments }: { onSave: (c: CriterionDef) => void; moments: MomentDef[] }) {
-  const [momentId, setMomentId] = useState('');
+  const [momentId, setMomentId] = useState('GROUP');
   const [kind, setKind] = useState<Kind>('AREA');
   const [name, setName] = useState('');
   const [from, setFrom] = useState('0');
@@ -121,15 +136,16 @@ function CriterionForm({ onSave, moments }: { onSave: (c: CriterionDef) => void;
     if (k.fields.includes('to') && !k.fields.includes('moment') && !(t > f && t <= 90)) return setMsg({ ok: false, text: 'The "to" angle must be larger than the "from" angle and at most 90°.' });
     if (k.fields.includes('angle') && !(a >= 0 && a <= 90)) return setMsg({ ok: false, text: 'The angle must be between 0° and 90°.' });
     const mom = moments.find((m) => m.id === momentId);
-    if (k.fields.includes('moment') && !mom) return setMsg({ ok: false, text: 'Choose a heeling moment (create one above first).' });
+    if (k.fields.includes('moment') && momentId !== 'GROUP' && !mom) return setMsg({ ok: false, text: 'Choose a heeling moment (create one above first).' });
+    const momName = momentId === 'GROUP' ? 'group moment' : mom?.name;
     const sym = comparator === '>=' ? '≥' : '≤';
     const auto =
       kind === 'AREA' ? `Area under GZ curve ${f}° to ${t}°${cap ? ' or θf' : ''} ${sym} ${req} m·rad`
       : kind === 'GZ_AT' ? `GZ at ${a}° ${sym} ${req} m`
       : kind === 'GZ_MAX_FROM' ? `GZ at an angle ≥ ${f}° ${sym} ${req} m`
-      : kind === 'HEEL_MOMENT' ? `Heel under ${mom?.name} ${sym} ${req}°`
-      : kind === 'RESID_AREA' ? `Residual area under ${mom?.name} to ${t}°${cap ? ' or θf' : ''} ${sym} ${req} m·rad`
-      : kind === 'RESID_GZMAX' ? `Residual arm under ${mom?.name} ${sym} ${req} m`
+      : kind === 'HEEL_MOMENT' ? `Heel under ${momName} ${sym} ${req}°`
+      : kind === 'RESID_AREA' ? `Residual area under ${momName} to ${t}°${cap ? ' or θf' : ''} ${sym} ${req} m·rad`
+      : kind === 'RESID_GZMAX' ? `Residual arm under ${momName} ${sym} ${req} m`
       : `${k.label} ${sym} ${req} ${k.unit}`;
     onSave({
       id: `USER-${newId()}`,
@@ -154,7 +170,7 @@ function CriterionForm({ onSave, moments }: { onSave: (c: CriterionDef) => void;
         {k.fields.includes('moment') && (
           <label>Heeling moment
             <select id="crit-moment" value={momentId} onChange={(e) => setMomentId(e.target.value)}>
-              <option value="">{moments.length ? 'Choose…' : 'Create a moment first'}</option>
+              <option value="GROUP">Combined moment of the group (connected when building the group)</option>
               {moments.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </label>
@@ -184,30 +200,43 @@ function CriterionForm({ onSave, moments }: { onSave: (c: CriterionDef) => void;
   );
 }
 
-function GroupBuilder({ all, onSave }: { all: CriterionDef[]; onSave: (g: GroupDef) => void }) {
-  const [name, setName] = useState('');
-  const [reference, setReference] = useState('');
-  const [picked, setPicked] = useState<string[]>([]);
+function GroupBuilder({ all, moments, onSave, editing, onCancel }: {
+  all: CriterionDef[]; moments: MomentDef[]; onSave: (g: GroupDef) => void; editing: GroupDef | null; onCancel: () => void;
+}) {
+  const [name, setName] = useState(editing?.name ?? '');
+  const [reference, setReference] = useState(editing?.regulation ?? '');
+  const [picked, setPicked] = useState<string[]>(editing?.criterionIds ?? []);
+  const [pickedM, setPickedM] = useState<string[]>(editing?.momentIds ?? []);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const toggleM = (id: string) => setPickedM((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const usesGroupMoment = picked.some((id) => {
+    const c = all.find((x) => x.id === id);
+    return c && ['HEEL_MOMENT', 'RESID_AREA', 'RESID_GZMAX'].includes(c.kind) && (c.params?.momentId ?? 'GROUP') === 'GROUP';
+  });
   const save = () => {
     if (!name.trim()) return setMsg({ ok: false, text: 'Give the group a name.' });
     if (picked.length === 0) return setMsg({ ok: false, text: 'Click at least one criterion to add it to the group.' });
+    if (usesGroupMoment && pickedM.length === 0) return setMsg({ ok: false, text: 'A selected criterion uses the group’s combined moment: connect at least one heeling moment.' });
     onSave({
-      id: `GRP-${newId()}`, name: name.trim(), regulation: reference.trim() || 'User-defined group',
-      description: `${picked.length} criteria selected by the user.`, chart: 'GENERAL', criterionIds: picked,
+      id: editing?.id ?? `GRP-${newId()}`, name: name.trim(), regulation: reference.trim() || 'User-defined group',
+      description: `${picked.length} criteria${pickedM.length ? `, ${pickedM.length} connected heeling moment(s)` : ''}.`,
+      chart: 'GENERAL', criterionIds: picked, momentIds: pickedM,
     });
-    setMsg({ ok: true, text: `Group “${name.trim()}” saved. Select it for a load case in the Load Case screen.` });
-    setName(''); setPicked([]);
+    setMsg({ ok: true, text: `Group “${name.trim()}” ${editing ? 'updated' : 'saved'}. Select it for a load case in the Load Case screen.` });
+    if (!editing) { setName(''); setPicked([]); setPickedM([]); }
   };
   return (
-    <section className="panel">
-      <div className="panel-head"><h2>Create stability group</h2><span className="muted small">{picked.length} selected</span></div>
+    <section className="panel" id="group-builder">
+      <div className="panel-head">
+        <h2>{editing ? `Edit group: ${editing.name}` : 'Create stability group'}</h2>
+        <span className="muted small">{picked.length} criteria · {pickedM.length} moments</span>
+      </div>
       <div className="form-row">
-        <label>Group name<input id="grp-name" className="wide" value={name} placeholder="e.g. Company minimum stability" onChange={(e) => setName(e.target.value)} /></label>
+        <label>Group name<input id="grp-name" className="wide" value={name} placeholder="e.g. Towing operation" onChange={(e) => setName(e.target.value)} /></label>
         <label>Reference (optional)<input id="grp-ref" value={reference} onChange={(e) => setReference(e.target.value)} /></label>
       </div>
-      <p className="muted small">Click criteria to add or remove them:</p>
+      <p className="small"><strong>Criteria:</strong> click to add or remove</p>
       <div className="pick-grid">
         {all.map((c) => {
           const i = picked.indexOf(c.id);
@@ -220,7 +249,28 @@ function GroupBuilder({ all, onSave }: { all: CriterionDef[]; onSave: (g: GroupD
           );
         })}
       </div>
-      <div className="form-actions"><button type="button" onClick={save}>Save group</button></div>
+      <p className="small"><strong>Heeling moments connected to this group:</strong> click to connect. The group’s combined heeling moment is the sum of the connected moments.</p>
+      {moments.length === 0 ? <p className="muted small">No moments yet. Create one in “Create heeling moment” above.</p> : (
+        <div className="pick-grid">
+          {moments.map((m) => {
+            const on = pickedM.includes(m.id);
+            return (
+              <button key={m.id} type="button" className={`pick moment ${on ? 'on' : ''}`} aria-pressed={on} onClick={() => toggleM(m.id)}>
+                {on && <span className="pick-n">+</span>}
+                <span>{m.name}</span>
+                <span className="muted small mono">{m.formula}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {usesGroupMoment && pickedM.length > 0 && (
+        <p className="small ok-text">Combined moment = {pickedM.map((id) => moments.find((m) => m.id === id)?.name).join(' + ')}</p>
+      )}
+      <div className="form-actions">
+        <button type="button" onClick={save}>{editing ? 'Save changes' : 'Save group'}</button>
+        {editing && <button type="button" className="ghost" onClick={onCancel}>Cancel editing</button>}
+      </div>
       {msg && <p className={msg.ok ? 'ok-text small' : 'fail-text small'} role="status">{msg.text}</p>}
     </section>
   );

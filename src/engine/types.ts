@@ -226,7 +226,7 @@ export interface CriterionDef {
   kind: CriterionKind;
   comparator: '>=' | '<=';
   required: number;
-  params?: { from?: number; to?: number; angle?: number; capAtFlood?: boolean; momentId?: string };
+  params?: { from?: number; to?: number; angle?: number; capAtFlood?: boolean; /** a moment id, or 'GROUP' = combined moment of the group */ momentId?: string };
   regulation?: string;
   builtin?: boolean;
 }
@@ -238,6 +238,9 @@ export interface GroupDef {
   description: string;
   chart: GroupChart;
   criterionIds: string[];
+  /** Heeling moments connected to this group. Their sum is the group's combined heeling moment,
+   *  used by moment criteria whose momentId is 'GROUP'. */
+  momentIds?: string[];
   builtin?: boolean;
 }
 

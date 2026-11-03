@@ -268,3 +268,10 @@ button.tiny { font-size: 12px; padding: 1px 8px; margin: 2px 4px 2px 0; }
 .small-h { margin: 0; font-size: 13px; color: var(--powder); }
 .group-tables { display: flex; flex-direction: column; gap: 4px; }
 .calc-box .grid td.num { white-space: nowrap; }
+
+.flow { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
+.flow-box { flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; background: var(--surface-2); font-size: 13px; }
+.flow-box strong { color: var(--accent-text); }
+.flow-box em { color: var(--powder); font-style: normal; font-weight: 600; }
+.flow-arrow { align-self: center; color: var(--accent); font-size: 20px; font-weight: 700; }
+.pick.moment .mono { font-size: 11px; }

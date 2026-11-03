@@ -79,3 +79,43 @@ describe('user-defined moment reproduces the built-in fire-fighting criterion', 
     expect(x.groups[0].error).toMatch(/"e" .* not linked/);
   });
 });
+
+describe('several moments connected to a group (combined heeling moment)', () => {
+  const ex = JSON.parse(readFileSync('vessels/marsol-splendor/marsol-splendor.extracted.json', 'utf8'));
+  const vessel = vesselFromBooklet(ex as BookletExtract);
+  const lc = VESSELS.find((v) => v.id === 'marsol-splendor')!.defaultLoadCases.find((c) => c.id === 'marsol-C2')!;
+  const lib: CriteriaLibrary = {
+    moments: [
+      { id: 'MON', name: 'Fire monitors', result: 'MOMENT', formula: 'n*R*(h - T/2)*cos(theta)', vars: [
+        { name: 'n', source: 'VALUE', value: 2 }, { name: 'R', source: 'VALUE', value: 1.53 }, { name: 'h', source: 'VALUE', value: 19.6 },
+        { name: 'T', source: 'DRAFT_MS' }, { name: 'theta', source: 'HEEL' }] },
+      { id: 'THR', name: 'Bow thruster', result: 'MOMENT', formula: 'S*(T/2 - e)*cos(theta)', vars: [
+        { name: 'S', source: 'VALUE', value: 18 }, { name: 'e', source: 'VALUE', value: 1.2 }, { name: 'T', source: 'DRAFT_MS' }, { name: 'theta', source: 'HEEL' }] },
+    ],
+    criteria: [{ id: 'C-G', name: 'Heel under group moment', kind: 'HEEL_MOMENT', comparator: '<=', required: 5, params: { momentId: 'GROUP' } }],
+    groups: [
+      { id: 'G-SUM', name: 'FIFI from two moments', regulation: '', description: '', chart: 'GENERAL', criterionIds: ['C-G'], momentIds: ['MON', 'THR'] },
+      { id: 'G-NONE', name: 'No moment connected', regulation: '', description: '', chart: 'GENERAL', criterionIds: ['C-G'] },
+    ],
+  };
+  const r = calculate(vessel, { ...lc, criteriaGroups: ['BV_FIFI', 'G-SUM', 'G-NONE'] }, lib);
+  const sum = r.groups.find((g) => g.id === 'G-SUM')!;
+
+  it('combined moment of two connected moments equals the built-in fire-fighting result', () => {
+    expect(sum.passed).toBe(true);
+    expect(sum.criteria[0].actual).toBeCloseTo(r.groups.find((g) => g.id === 'BV_FIFI')!.criteria[0].actual, 6);
+  });
+  it('the group shows the combined table first, then each connected moment', () => {
+    expect(sum.moments.map((m) => m.name)).toEqual(['Combined heeling moment (Fire monitors + Bow thruster)', 'Fire monitors', 'Bow thruster']);
+    expect(sum.moments[0].rows[0].moment!).toBeCloseTo(69.75, 1);
+    for (const row of sum.table) {
+      expect(row.arms[0]).toBeCloseTo(row.arms[1] + row.arms[2], 12); // total = sum of parts
+      expect(row.residual!).toBeCloseTo(row.gz - row.arms[0], 12);
+    }
+  });
+  it('a group-moment criterion in a group without connected moments fails with a reason', () => {
+    const g = r.groups.find((x) => x.id === 'G-NONE')!;
+    expect(g.passed).toBe(false);
+    expect(g.error).toMatch(/no heeling moment is connected/);
+  });
+});
