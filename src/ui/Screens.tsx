@@ -197,6 +197,7 @@ function GroupSection({ g, r, lc, onChange }: { g: CriteriaGroupResult; r: Resul
                 ['B/d', f(w.Bd, 3)],
                 ['Block coefficient C_B', f(w.Cb, 3)],
                 ['X1 / X2 / k', `${f(w.X1, 3)} / ${f(w.X2, 3)} / ${f(w.k, 3)}`],
+                ['Roll factor k basis (A 2.3.4)', w.kBasis],
                 ['OG / r = 0.73 + 0.6·OG/d', `${f(w.OG, 3)} m / ${f(w.r, 4)}`],
                 ['C / Roll period T = 2·C·B/√GM', `${f(w.C, 4)} / ${f(w.Troll, 2)} s`],
                 ['s', f(w.s, 4)],
@@ -283,7 +284,8 @@ export function VesselData({ vessel, status, source }: { vessel: Vessel; status:
               ['Ship name', vessel.name], ['IMO number', vessel.imo], ['Call sign', vessel.callSign],
               ['Length BP', `${f(vessel.lbp, 2)} m`], ['Breadth', `${f(vessel.breadth, 2)} m`], ['Depth', `${f(vessel.depth, 2)} m`],
               ['Reference density', `${f(vessel.rhoRef, 3)} t/m³`], ['Max draft', vessel.maxDraft ? `${f(vessel.maxDraft, 3)} m` : '—'],
-              ['Bilge type', vessel.bilgeType], ['Bilge keel area', `${f(vessel.bilgeKeelArea, 1)} m²`],
+              ['Bilge type', vessel.bilgeType === 'SHARP' ? 'sharp' : 'round'],
+              ['Bilge keels / bar keel', (vessel.hasBilgeKeels ?? vessel.bilgeKeelArea > 0) && vessel.bilgeKeelArea > 0 ? `fitted, A_k = ${f(vessel.bilgeKeelArea, 2)} m² (k from table)` : `area not given (k = ${vessel.bilgeType === 'SHARP' ? '0.7' : '1.0'})`],
             ] as [string, string][]).map(([k, v]) => <tr key={k}><td>{k}</td><td className="num">{v}</td></tr>)}
           </tbody></table>
         </section>
@@ -295,6 +297,15 @@ export function VesselData({ vessel, status, source }: { vessel: Vessel; status:
             <tr><td>TCG</td><td className="num">{f(vessel.lightship.tcg, 3)} m</td></tr>
             <tr><td>VCG</td><td className="num">{f(vessel.lightship.vcg, 3)} m</td></tr>
           </tbody></table>
+          {vessel.lightshipItems && vessel.lightshipItems.length > 1 && (
+            <details className="calc-details">
+              <summary>Lightship breakdown ({vessel.lightshipItems.length} items)</summary>
+              <table className="grid">
+                <thead><tr><th>Item</th><th className="num">t</th><th className="num">LCG</th><th className="num">TCG</th><th className="num">VCG</th></tr></thead>
+                <tbody>{vessel.lightshipItems.map((x, i) => <tr key={i}><td>{x.description}</td><td className="num">{f(x.weight, 2)}</td><td className="num">{f(x.lcg, 3)}</td><td className="num">{f(x.tcg, 3)}</td><td className="num">{f(x.vcg, 3)}</td></tr>)}</tbody>
+              </table>
+            </details>
+          )}
           <div className="panel-head"><h2>Down-flooding openings</h2></div>
           <table className="grid">
             <thead><tr><th>Opening</th><th className="num">X</th><th className="num">Y</th><th className="num">Z</th></tr></thead>

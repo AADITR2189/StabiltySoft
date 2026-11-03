@@ -89,7 +89,11 @@ export interface Vessel {
   depth: number;
   rhoRef: number;
   bilgeType: 'ROUND' | 'SHARP';
-  bilgeKeelArea: number; // A_k (m²)
+  bilgeKeelArea: number; // A_k (m²); used for k whenever it is > 0 and bilge keels are fitted
+  /** Bilge keels and/or bar keel fitted with known total area A_k. Undefined = fitted when bilgeKeelArea > 0. */
+  hasBilgeKeels?: boolean;
+  /** Optional lightship breakdown; the totals are in `lightship`. */
+  lightshipItems?: { description: string; weight: number; lcg: number; tcg: number; vcg: number }[];
   lightship: Lightship;
   hydro: HydroTable;
   kn: KNTable;
@@ -352,7 +356,7 @@ export interface CriteriaGroupResult {
 export interface WeatherDetail {
   P: number; A: number; Z: number; hA: number;
   lw1: number; lw2: number;
-  Bd: number; Cb: number; X1: number; X2: number; k: number; r: number; OG: number;
+  Bd: number; Cb: number; X1: number; X2: number; k: number; kBasis: string; r: number; OG: number;
   C: number; Troll: number; s: number;
   theta0: number; theta1: number; thetaR: number; thetaX: number | null; thetaC: number | null; theta2: number;
   areaA: number; areaB: number;

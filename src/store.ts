@@ -15,7 +15,7 @@ const VKEY = 'stabilitysoft.uservessels.v1';
 
 /** Datasets a vessel needs before its data can count as verified. */
 export function requiredDatasets(v: Vessel): string[] {
-  return ['PARTICULARS', 'HYDRO', 'KN', 'WINDAGE', 'OPENINGS', ...v.tanks.map((t) => `TANK ${t.name}`)];
+  return ['PARTICULARS', 'LIGHTSHIP', 'HYDRO', 'KN', 'WINDAGE', 'OPENINGS', ...v.tanks.map((t) => `TANK ${t.name}`)];
 }
 
 export function missingVerification(u: UserVesselEntry): string[] {

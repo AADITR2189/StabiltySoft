@@ -42,8 +42,8 @@ export default function App() {
   }, []);
 
   const calc = useMemo(() => (x: LoadCase): { r: Results | null; error: string | null } => {
-    const missing = [!vessel.hydro.rows.length && 'hydrostatic table', !vessel.kn.displacements.length && 'cross curves (KN)', !(vessel.lbp > 0) && 'particulars'].filter(Boolean);
-    if (missing.length) return { r: null, error: `Vessel data incomplete: ${missing.join(', ')} missing. Bring them in with Data Import.` };
+    const missing = [!vessel.hydro.rows.length && 'hydrostatic table', !vessel.kn.displacements.length && 'cross curves (KN)', !(vessel.lbp > 0) && 'particulars', !(vessel.lightship.weight > 0) && 'lightship'].filter(Boolean);
+    if (missing.length) return { r: null, error: `Vessel data incomplete: ${missing.join(', ')} missing. Add them in Vessel Database or Data Import.` };
     try {
       return { r: calculate(vessel, x, library.lib), error: null };
     } catch (e) {

@@ -1,7 +1,7 @@
 // What can be imported, field by field. Each field knows its unit, whether it is a longitudinal (X)
 // or transverse (Y) position (those get the reference / sign conversion), and header words used to
 // guess the column automatically.
-export type DatasetKind = 'HYDRO' | 'KN' | 'TANK' | 'WINDAGE' | 'OPENINGS' | 'WEIGHTS';
+export type DatasetKind = 'HYDRO' | 'KN' | 'TANK' | 'WINDAGE' | 'OPENINGS' | 'WEIGHTS' | 'LIGHTSHIP';
 
 export interface FieldDef {
   key: string;
@@ -74,6 +74,16 @@ export const DATASETS: DatasetDef[] = [
       { key: 'x', label: 'X (longitudinal)', unit: 'm', required: true, type: 'num', pos: 'X', guess: /^x|long|lcg/i },
       { key: 'y', label: 'Y (transverse)', unit: 'm', required: true, type: 'num', pos: 'Y', guess: /^y|trans|tcg/i },
       { key: 'z', label: 'Z (height above base)', unit: 'm', required: true, type: 'num', guess: /^z|vert|height|vcg/i },
+    ],
+  },
+  {
+    kind: 'LIGHTSHIP', label: 'Lightship: table of weight items', help: 'Lightship weight breakdown (hull, machinery, outfit …). The software adds up the items; a "total" line in the table is used only to check the sum.',
+    fields: [
+      { key: 'description', label: 'Item', unit: '', required: false, type: 'text', guess: /item|desc|name|group|component/i },
+      { key: 'weight', label: 'Weight', unit: 't', required: true, type: 'num', guess: /weight|mass|\bwt\b|tonn|\(t\)|\(mt\)/i },
+      { key: 'lcg', label: 'LCG', unit: 'm', required: true, type: 'num', pos: 'X', guess: /lcg/i },
+      { key: 'tcg', label: 'TCG', unit: 'm', required: false, type: 'num', pos: 'Y', guess: /tcg/i },
+      { key: 'vcg', label: 'VCG', unit: 'm', required: true, type: 'num', guess: /vcg|kg\b/i },
     ],
   },
   {

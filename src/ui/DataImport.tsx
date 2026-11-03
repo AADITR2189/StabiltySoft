@@ -1,6 +1,6 @@
 // Data Import: PDF / Excel / CSV / Word / pasted text → a table in the software, with a cell-by-cell
 // trace to the source, consistency checks, human verification and a read-back check after storing.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { LoadCase, TankGroup, Vessel } from '../engine/types';
 import type { VesselEntry } from '../data/vessels';
 import type { UserVesselEntry } from '../importer/dbFile';
@@ -10,6 +10,9 @@ import { checkConversion } from '../importer/checks';
 import { applyToVessel, applyWeights, compareRows, datasetKey, expectedRows, SORTED, storedRows, type ApplyOptions, type Provenance } from '../importer/apply';
 import { ACCEPT, fromPastedText, readSource, type SourceDoc } from '../importer/sources';
 import { newId } from '../store';
+import { KvSection } from './KvImport';
+import { PdfPage } from './PdfPage';
+import type { KvKind } from '../importer/keyValue';
 
 interface Props {
   entries: VesselEntry[];
@@ -26,7 +29,9 @@ interface Props {
 const GROUPS: TankGroup[] = ['BALLAST', 'FUEL_OIL', 'DIESEL_OIL', 'LUB_OIL', 'FRESH_WATER', 'MISC'];
 
 export function DataImportScreen(p: Props) {
-  const [kind, setKind] = useState<DatasetKind>('HYDRO');
+  const [mode, setMode] = useState<DatasetKind | KvKind>('PARTICULARS');
+  const isKv = mode === 'PARTICULARS' || mode === 'LIGHTSHIP_SUMMARY';
+  const kind: DatasetKind = isKv ? 'HYDRO' : (mode as DatasetKind);
   const def = datasetDef(kind);
   const target = p.userVessels.find((u) => u.id === p.current.id);
   const vessel: Vessel = target?.vessel ?? p.current.vessel;
@@ -95,7 +100,7 @@ export function DataImportScreen(p: Props) {
   async function onFile(f: File | undefined) {
     if (!f) return;
     setReading(true); setReadErr(null); setDoc(null); setResult(null);
-    try { const d = await readSource(f); setDoc(d); setTableId(pickTable(d, kind)); }
+    try { const d = await readSource(f); setDoc(d); setTableId(pickTable(d, mode)); }
     catch (e) { setReadErr(e instanceof Error ? e.message : String(e)); }
     finally { setReading(false); }
   }
@@ -161,7 +166,9 @@ export function DataImportScreen(p: Props) {
         <div className="panel-head"><h2>1 · What to import, and into which vessel</h2></div>
         <div className="form-row">
           <label>Data set
-            <select value={kind} onChange={(e) => { setKind(e.target.value as DatasetKind); setResult(null); }}>
+            <select value={mode} onChange={(e) => { setMode(e.target.value as DatasetKind | KvKind); setResult(null); if (doc) setTableId(pickTable(doc, e.target.value as DatasetKind | KvKind)); }}>
+              <option value="PARTICULARS">General particulars (label / value list)</option>
+              <option value="LIGHTSHIP_SUMMARY">Lightship: total weight and centres (label / value list)</option>
               {DATASETS.map((d) => <option key={d.kind} value={d.kind}>{d.label}</option>)}
             </select>
           </label>
@@ -170,8 +177,8 @@ export function DataImportScreen(p: Props) {
               {p.entries.map((e) => <option key={e.id} value={e.id}>{e.vessel.name}{e.user ? ' (mine)' : ' (built-in, read-only)'}</option>)}
             </select>
           </label>
-          {(kind === 'HYDRO' || kind === 'KN') && <label>Trim of this table (m, + by stern)<input type="number" step="any" value={trim} onChange={(e) => setTrim(Number(e.target.value))} /></label>}
-          {kind === 'TANK' && <>
+          {!isKv && (kind === 'HYDRO' || kind === 'KN') && <label>Trim of this table (m, + by stern)<input type="number" step="any" value={trim} onChange={(e) => setTrim(Number(e.target.value))} /></label>}
+          {!isKv && kind === 'TANK' && <>
             <label>Tank name
               <input list="tank-names" value={tankName} onChange={(e) => {
                 setTankName(e.target.value);
@@ -184,10 +191,10 @@ export function DataImportScreen(p: Props) {
             <label>Density t/m³<input type="number" step="any" value={tankDensity} onChange={(e) => setTankDensity(Number(e.target.value))} /></label>
             <label style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={consumable} onChange={(e) => setConsumable(e.target.checked)} /> Consumable</label>
           </>}
-          {kind === 'WEIGHTS' && <p className="muted small" style={{ alignSelf: 'end' }}>Added to load case: <b>{p.lc.name}</b></p>}
+          {!isKv && kind === 'WEIGHTS' && <p className="muted small" style={{ alignSelf: 'end' }}>Added to load case: <b>{p.lc.name}</b></p>}
         </div>
-        <p className="muted small">{def.help}</p>
-        {kind !== 'WEIGHTS' && !target && (
+        <p className="muted small">{isKv ? (mode === 'PARTICULARS' ? 'Ship name, IMO, call sign, LBP, breadth, depth, draft, density and bilge keel area are found by their labels (e.g. "LBP ...... 57.400 m"). Fields not in the source keep their present value.' : 'Lightship weight, LCG, TCG and VCG found by their labels (e.g. "Lightship LCG = 0.592 m AFT of MIDSHIP"). Words like aft / fwd of midship and port / starboard are understood.') : def.help}</p>
+        {(isKv || kind !== 'WEIGHTS') && !target && (
           <div className="notice warn-notice">
             <b>{p.current.vessel.name}</b> is a built-in vessel and cannot be changed. Make your own copy to import into, or create a new vessel in Vessel Database.
             <div style={{ marginTop: 8 }}><button onClick={() => p.openVessel(p.makeCopy(p.current))}>Make my copy of {p.current.vessel.name}</button></div>
@@ -213,8 +220,10 @@ export function DataImportScreen(p: Props) {
         {doc && doc.tables.length === 0 && <div className="error-box">No readable text or tables found in this file.</div>}
       </section>
 
+      {isKv && doc && <KvSection kind={mode as KvKind} doc={doc} tableId={table?.id ?? ''} setTableId={setTableId} vessel={vessel} target={target} save={p.saveUserVessel} />}
+
       {/* 3. table and columns */}
-      {doc && table && mapping && (
+      {!isKv && doc && table && mapping && (
         <section className="panel">
           <div className="panel-head"><h2>3 · Table and columns</h2><span className="muted small">{doc.tables.length} table(s) / page(s) found</span></div>
           <div className="form-row">
@@ -256,7 +265,7 @@ export function DataImportScreen(p: Props) {
       )}
 
       {/* 4. review */}
-      {conv && mapping && (
+      {!isKv && conv && mapping && (
         <section className="panel">
           <div className="panel-head"><h2>4 · Review: converted table next to the source text</h2>
             <span className="muted small">{conv.rows.length} rows · {conv.stats.cellsRead} values · {conv.stats.positionsConverted} positions converted{edited ? ` · ${edited} edited by hand` : ''}</span></div>
@@ -282,7 +291,7 @@ export function DataImportScreen(p: Props) {
       )}
 
       {/* 5. verify and store */}
-      {conv && (
+      {!isKv && conv && (
         <section className="panel">
           <div className="panel-head"><h2>5 · Verify and store</h2></div>
           <div className="form-row">
@@ -308,9 +317,18 @@ export function DataImportScreen(p: Props) {
   );
 }
 
-function pickTable(d: SourceDoc, kind: DatasetKind): string {
-  const words: Record<DatasetKind, RegExp> = { HYDRO: /hydrostat/i, KN: /cross\s*curve|KN/i, TANK: /sounding|ullage|calibration/i, WINDAGE: /wind|lateral/i, OPENINGS: /flood|opening/i, WEIGHTS: /weight|deadweight/i };
-  const t = d.tables.find((x) => words[kind].test(x.rows.slice(0, 8).flat().join(' ')));
+function pickTable(d: SourceDoc, kind: DatasetKind | KvKind): string {
+  const words: Record<DatasetKind | KvKind, RegExp> = {
+    HYDRO: /hydrostat/i, KN: /cross\s*curve|KN/i, TANK: /sounding|ullage|calibration/i, WINDAGE: /wind|lateral/i, OPENINGS: /flood|opening/i, WEIGHTS: /weight|deadweight/i,
+    LIGHTSHIP: /light\s*ship.*(weight|estimat|breakdown)/i, PARTICULARS: /general\s*particulars|principal\s*(particulars|dimensions)|main\s*particulars/i, LIGHTSHIP_SUMMARY: /light\s*ship\s*(weight|lcg|vcg)/i,
+  };
+  const flat = (x: SourceDoc['tables'][number], n: number) => x.rows.slice(0, n).map((r) => r.join(' ')).join('\n');
+  // label / value lists: the page that holds the values, not the contents page that names them
+  const kv: Partial<Record<DatasetKind | KvKind, (t: string) => boolean>> = {
+    PARTICULARS: (t) => /\b(lbp|lpp|length\s*b\.?p)\b[^\n]*\d/i.test(t) && /breadth[^\n]*\d/i.test(t),
+    LIGHTSHIP_SUMMARY: (t) => /light\s*ship[^\n]*(weight|lcg|vcg)[^\n]*\d/i.test(t),
+  };
+  const t = kv[kind] ? d.tables.find((x) => kv[kind]!(flat(x, 80))) : d.tables.find((x) => words[kind].test(flat(x, 8)));
   return (t ?? d.tables[0])?.id ?? '';
 }
 
@@ -364,22 +382,6 @@ function SourceGrid({ rows, mapping, def, onMap }: { rows: string[][]; mapping: 
           })}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function PdfPage({ doc, page }: { doc: SourceDoc; page: number }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    if (ref.current && doc.renderPage) doc.renderPage(page, ref.current, 520).catch((e) => !cancelled && setErr(String(e)));
-    return () => { cancelled = true; };
-  }, [doc, page]);
-  return (
-    <div className="pdf-page">
-      <div className="muted small">Source page {page} (for side-by-side comparison)</div>
-      {err ? <div className="error-box">Page image could not be drawn: {err}</div> : <canvas ref={ref} aria-label={`PDF page ${page}`} />}
     </div>
   );
 }

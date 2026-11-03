@@ -24,6 +24,7 @@ interface Props {
 
 export function VesselManager(p: Props) {
   const [form, setForm] = useState<{ id: string | null } | null>(null);
+  const [lightForm, setLightForm] = useState<string | null>(null);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const mine = p.userVessels.find((u) => u.id === p.current.id);
   return (
@@ -49,7 +50,8 @@ export function VesselManager(p: Props) {
                     </td>
                     <td className="actions">
                       <button className="ghost tiny" onClick={() => p.openVessel(p.makeCopy(e))}>Copy as mine</button>
-                      {u && <button className="ghost tiny" onClick={() => { p.openVessel(e.id); setForm({ id: e.id }); }}>Edit particulars</button>}
+                      {u && <button className="ghost tiny" onClick={() => { p.openVessel(e.id); setLightForm(null); setForm({ id: e.id }); }}>Edit particulars</button>}
+                      {u && <button className="ghost tiny" onClick={() => { p.openVessel(e.id); setForm(null); setLightForm(e.id); }}>Edit lightship</button>}
                       {u && (confirmDel === e.id
                         ? <><button className="danger tiny" onClick={() => { p.removeUserVessel(e.id); setConfirmDel(null); }}>Delete with its load cases</button><button className="ghost tiny" onClick={() => setConfirmDel(null)}>Keep</button></>
                         : <button className="ghost tiny" onClick={() => setConfirmDel(e.id)}>Delete</button>)}
@@ -64,7 +66,10 @@ export function VesselManager(p: Props) {
 
       {form && <ParticularsForm key={form.id ?? 'new'} existing={form.id ? p.userVessels.find((u) => u.id === form.id) : undefined}
         onCancel={() => setForm(null)}
-        onSave={(u) => { p.saveUserVessel(u); p.openVessel(u.id); setForm(null); }} />}
+        onSave={(u) => { const isNew = !p.userVessels.some((x) => x.id === u.id); p.saveUserVessel(u); p.openVessel(u.id); setForm(null); if (isNew) setLightForm(u.id); }} />}
+
+      {lightForm && p.userVessels.find((u) => u.id === lightForm) && <LightshipForm key={lightForm} u={p.userVessels.find((u) => u.id === lightForm)!}
+        onCancel={() => setLightForm(null)} onSave={(u) => { p.saveUserVessel(u); setLightForm(null); }} />}
 
       {mine && <Provenances u={mine} />}
 
@@ -101,18 +106,36 @@ function Provenances({ u }: { u: UserVesselEntry }) {
 }
 
 type Num = number | '';
+const K_TABLE: [number[], number[]] = [[0, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0], [1.0, 0.98, 0.95, 0.88, 0.79, 0.74, 0.72, 0.7]];
+function kPreview(keels: boolean, area: Num, bilge: string, L: Num, B: Num): string {
+  if (keels) {
+    if (!(+area > 0)) return 'Enter the total bilge keel area A_k (both sides, plus bar keel area if any).';
+    if (!(+L > 0 && +B > 0)) return 'k will be taken from the IS Code table with A_k·100/(L·B).';
+    const x = (+area * 100) / (+L * +B);
+    const [xs, ys] = K_TABLE;
+    const c = Math.min(Math.max(x, xs[0]), xs[xs.length - 1]);
+    let i = 0; while (i < xs.length - 2 && c > xs[i + 1]) i++;
+    const k = ys[i] + ((c - xs[i]) / (xs[i + 1] - xs[i])) * (ys[i + 1] - ys[i]);
+    return `A_k·100/(L·B) = ${x.toFixed(3)} → k ≈ ${k.toFixed(3)} from the IS Code 2008 A 2.3.4 table (calculated with the waterline length of each condition; LBP shown here).`;
+  }
+  return bilge === 'SHARP' ? 'No bilge keel area: k = 0.7 for a ship with sharp bilges (IS Code 2008 A 2.3.4).' : 'No bilge keel area: k = 1.0 for a round-bilged ship without bilge or bar keels (IS Code 2008 A 2.3.4).';
+}
+
 function ParticularsForm({ existing, onSave, onCancel }: { existing?: UserVesselEntry; onSave: (u: UserVesselEntry) => void; onCancel: () => void }) {
   const v = existing?.vessel;
   const [s, setS] = useState({
     name: v?.name ?? '', imo: v?.imo ?? '', callSign: v?.callSign ?? '',
-    lbp: (v?.lbp ?? '') as Num, breadth: (v?.breadth ?? '') as Num, depth: (v?.depth ?? '') as Num, maxDraft: (v?.maxDraft ?? '') as Num,
-    rhoRef: (v?.rhoRef ?? 1.025) as Num, bilgeType: v?.bilgeType ?? 'ROUND', bilgeKeelArea: (v?.bilgeKeelArea ?? 0) as Num,
-    lw: (v?.lightship.weight ?? '') as Num, lcg: (v?.lightship.lcg ?? '') as Num, tcg: (v?.lightship.tcg ?? 0) as Num, vcg: (v?.lightship.vcg ?? '') as Num,
+    lbp: (v?.lbp || '') as Num, breadth: (v?.breadth || '') as Num, depth: (v?.depth || '') as Num, maxDraft: (v?.maxDraft ?? '') as Num,
+    rhoRef: (v?.rhoRef ?? 1.025) as Num, bilgeType: v?.bilgeType ?? 'ROUND',
+    keels: v ? (v.hasBilgeKeels ?? v.bilgeKeelArea > 0) : false, bilgeKeelArea: (v?.bilgeKeelArea || '') as Num,
     by: '',
   });
   const num = (k: keyof typeof s) => (e: React.ChangeEvent<HTMLInputElement>) => setS({ ...s, [k]: e.target.value === '' ? '' : Number(e.target.value) });
-  const required: (keyof typeof s)[] = ['lbp', 'breadth', 'depth', 'rhoRef', 'lw', 'lcg', 'vcg'];
-  const missing = [!s.name.trim() && 'name', ...required.filter((k) => s[k] === '' || !Number.isFinite(s[k] as number)), !s.by.trim() && 'your name'].filter(Boolean);
+  const required: (keyof typeof s)[] = ['lbp', 'breadth', 'depth', 'rhoRef'];
+  const missing = [
+    !s.name.trim() && 'name', ...required.filter((k) => s[k] === '' || !Number.isFinite(s[k] as number)),
+    s.keels && !(+s.bilgeKeelArea > 0) && 'bilge keel area (or untick "area known")', !s.by.trim() && 'your name',
+  ].filter(Boolean);
   const save = () => {
     const base: Vessel = v ? structuredClone(v) : {
       name: '', imo: '', callSign: '', lbp: 0, breadth: 0, depth: 0, rhoRef: 1.025, bilgeType: 'ROUND', bilgeKeelArea: 0,
@@ -121,8 +144,8 @@ function ParticularsForm({ existing, onSave, onCancel }: { existing?: UserVessel
     };
     const vessel: Vessel = {
       ...base, name: s.name.trim(), imo: s.imo.trim(), callSign: s.callSign.trim(), lbp: +s.lbp, breadth: +s.breadth, depth: +s.depth,
-      maxDraft: s.maxDraft === '' ? undefined : +s.maxDraft, rhoRef: +s.rhoRef, bilgeType: s.bilgeType as Vessel['bilgeType'], bilgeKeelArea: +s.bilgeKeelArea,
-      lightship: { weight: +s.lw, lcg: +s.lcg, tcg: +s.tcg, vcg: +s.vcg },
+      maxDraft: s.maxDraft === '' ? undefined : +s.maxDraft, rhoRef: +s.rhoRef, bilgeType: s.bilgeType as Vessel['bilgeType'],
+      hasBilgeKeels: s.keels, bilgeKeelArea: s.keels ? +s.bilgeKeelArea : 0,
       hydro: { ...base.hydro, rhoRef: +s.rhoRef }, kn: { ...base.kn, rhoRef: +s.rhoRef },
     };
     const id = existing?.id ?? `u-${newId()}`;
@@ -130,7 +153,7 @@ function ParticularsForm({ existing, onSave, onCancel }: { existing?: UserVessel
       id, vessel, source: existing?.source ?? 'Created in StabilitySoft', createdAt: existing?.createdAt ?? new Date().toISOString(),
       provenance: {
         ...(existing?.provenance ?? {}),
-        PARTICULARS: { dataset: 'PARTICULARS', method: 'TYPED', fileName: 'Typed in', fileSha256: '', location: 'General particulars and lightship form', rows: 1, values: 11, editedCells: 0, checks: { errors: 0, warnings: 0 }, storedCheck: 'entered directly', verifiedBy: s.by.trim(), verifiedAt: new Date().toISOString() },
+        PARTICULARS: { dataset: 'PARTICULARS', method: 'TYPED', fileName: 'Typed in', fileSha256: '', location: 'General particulars form', rows: 1, values: 10, editedCells: 0, checks: { errors: 0, warnings: 0 }, storedCheck: 'entered directly', verifiedBy: s.by.trim(), verifiedAt: new Date().toISOString() },
       },
     });
   };
@@ -138,24 +161,91 @@ function ParticularsForm({ existing, onSave, onCancel }: { existing?: UserVessel
   return (
     <section className="panel">
       <div className="panel-head"><h2>{existing ? `Particulars of ${existing.vessel.name}` : 'New vessel'}</h2></div>
+      <p className="muted small">Type the values here, or import them from the booklet with <b>Data Import → General particulars</b>.</p>
       <div className="form-row">
         <label>Ship name<input value={s.name} onChange={(e) => setS({ ...s, name: e.target.value })} /></label>
         <label>IMO number<input value={s.imo} onChange={(e) => setS({ ...s, imo: e.target.value })} /></label>
         <label>Call sign<input value={s.callSign} onChange={(e) => setS({ ...s, callSign: e.target.value })} /></label>
         {F('Length between perpendiculars', 'lbp', 'm')}{F('Breadth', 'breadth', 'm')}{F('Depth', 'depth', 'm')}{F('Load line draft', 'maxDraft', 'm')}
         {F('Density of hydrostatic tables', 'rhoRef', 't/m³')}
-        <label>Bilge<select value={s.bilgeType} onChange={(e) => setS({ ...s, bilgeType: e.target.value as 'ROUND' | 'SHARP' })}><option value="ROUND">round</option><option value="SHARP">sharp</option></select></label>
-        {F('Bilge keel area', 'bilgeKeelArea', 'm²')}
       </div>
-      <h3 className="small-h" style={{ marginTop: 12 }}>Lightship</h3>
-      <div className="form-row">{F('Weight', 'lw', 't')}{F('LCG from AP', 'lcg', 'm')}{F('TCG (+ stbd)', 'tcg', 'm')}{F('VCG', 'vcg', 'm')}</div>
+      <h3 className="small-h" style={{ marginTop: 12 }}>Bilge and bilge keels (roll factor k of the weather criterion)</h3>
+      <div className="form-row">
+        <label>Bilge<select value={s.bilgeType} onChange={(e) => setS({ ...s, bilgeType: e.target.value as 'ROUND' | 'SHARP' })}><option value="ROUND">round</option><option value="SHARP">sharp</option></select></label>
+        <label style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'end' }}>
+          <input type="checkbox" checked={s.keels} onChange={(e) => setS({ ...s, keels: e.target.checked })} /> Bilge keels / bar keel fitted and area known
+        </label>
+        {s.keels && F('Total bilge keel area A_k', 'bilgeKeelArea', 'm²')}
+      </div>
+      <p className="muted small">{kPreview(s.keels, s.bilgeKeelArea, s.bilgeType, s.lbp, s.breadth)}</p>
       <div className="form-row" style={{ marginTop: 12 }}>
         <label>Entered and checked by<input value={s.by} onChange={(e) => setS({ ...s, by: e.target.value })} placeholder="Name / rank" /></label>
         <button style={{ alignSelf: 'end' }} disabled={missing.length > 0} onClick={save}>{existing ? 'Save particulars' : 'Create vessel'}</button>
         <button className="ghost" style={{ alignSelf: 'end' }} onClick={onCancel}>Cancel</button>
       </div>
       {missing.length > 0 && <p className="muted small">Still needed: {missing.join(', ')}.</p>}
-      {!existing && <p className="muted small">After creating the vessel, bring in the hydrostatics, cross curves, tanks, windage and openings with <b>Data Import</b>.</p>}
+      {!existing && <p className="muted small">After creating the vessel, add the lightship (<b>Edit lightship</b>) and bring in the hydrostatics, cross curves, tanks, windage and openings with <b>Data Import</b>.</p>}
+    </section>
+  );
+}
+
+type Item = { description: string; weight: Num; lcg: Num; tcg: Num; vcg: Num };
+function LightshipForm({ u, onSave, onCancel }: { u: UserVesselEntry; onSave: (u: UserVesselEntry) => void; onCancel: () => void }) {
+  const v = u.vessel;
+  const L = v.lbp;
+  const start: Item[] = v.lightshipItems?.length
+    ? v.lightshipItems.map((x) => ({ ...x }))
+    : [{ description: 'Lightship', weight: v.lightship.weight || '', lcg: v.lightship.weight ? v.lightship.lcg : '', tcg: v.lightship.weight ? v.lightship.tcg : 0, vcg: v.lightship.weight ? v.lightship.vcg : '' }];
+  const [items, setItems] = useState<Item[]>(start);
+  const [xRef, setXRef] = useState<'AP' | 'MID'>('AP');
+  const [by, setBy] = useState('');
+  const toAP = (x: number) => (xRef === 'MID' ? L / 2 + x : x);
+  const ok = (x: Num) => x !== '' && Number.isFinite(x);
+  const complete = items.filter((x) => ok(x.weight) && ok(x.lcg) && ok(x.vcg));
+  const W = complete.reduce((s, x) => s + +x.weight, 0);
+  const m = (f: (x: Item) => number) => (W ? complete.reduce((s, x) => s + +x.weight * f(x), 0) / W : 0);
+  const tot = { weight: W, lcg: m((x) => toAP(+x.lcg)), tcg: m((x) => +(x.tcg || 0)), vcg: m((x) => +x.vcg) };
+  const missing = [complete.length !== items.length && 'every row needs weight, LCG and VCG', !(W > 0) && 'total weight must be positive', !by.trim() && 'your name'].filter(Boolean);
+  const set = (i: number, k: keyof Item, val: string) => setItems(items.map((x, j) => (j !== i ? x : { ...x, [k]: k === 'description' ? val : val === '' ? '' : Number(val) })));
+  const save = () => {
+    const list = complete.map((x) => ({ description: x.description.trim() || 'Item', weight: +x.weight, lcg: toAP(+x.lcg), tcg: +(x.tcg || 0), vcg: +x.vcg }));
+    const vessel: Vessel = { ...structuredClone(v), lightship: tot, lightshipItems: list.length > 1 ? list : undefined };
+    onSave({
+      ...u, vessel,
+      provenance: { ...u.provenance, LIGHTSHIP: { dataset: 'LIGHTSHIP', method: 'TYPED', fileName: 'Typed in', fileSha256: '', location: `Lightship form, ${list.length} item(s)`, rows: list.length, values: list.length * 4, editedCells: 0, checks: { errors: 0, warnings: 0 }, storedCheck: 'entered directly', verifiedBy: by.trim(), verifiedAt: new Date().toISOString() } },
+    });
+  };
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>Lightship of {v.name}</h2></div>
+      <p className="muted small">One line with the totals, or several weight items (hull, machinery, outfit, …) which are added up. To import from the booklet use <b>Data Import → Lightship</b>.</p>
+      <div className="form-row">
+        <label>LCG entered
+          <select value={xRef} onChange={(e) => setXRef(e.target.value as 'AP' | 'MID')}><option value="AP">from AP, + forward</option><option value="MID">from midship, + forward (− aft)</option></select>
+        </label>
+      </div>
+      <div className="table-wrap">
+        <table className="grid">
+          <thead><tr><th>Item</th><th className="num">Weight t</th><th className="num">LCG m</th><th className="num">TCG m (+ stbd)</th><th className="num">VCG m</th><th /></tr></thead>
+          <tbody>
+            {items.map((x, i) => (
+              <tr key={i}>
+                <td><input value={x.description} onChange={(e) => set(i, 'description', e.target.value)} aria-label={`Item ${i + 1} description`} /></td>
+                {(['weight', 'lcg', 'tcg', 'vcg'] as const).map((k) => <td key={k} className="num"><input type="number" step="any" style={{ width: 100 }} value={x[k]} onChange={(e) => set(i, k, e.target.value)} aria-label={`Item ${i + 1} ${k}`} /></td>)}
+                <td className="actions">{items.length > 1 && <button className="ghost tiny" onClick={() => setItems(items.filter((_, j) => j !== i))}>Remove</button>}</td>
+              </tr>
+            ))}
+            <tr className="total"><td>Lightship total{xRef === 'MID' ? ' (LCG from AP)' : ''}</td><td className="num">{tot.weight.toFixed(2)}</td><td className="num">{tot.lcg.toFixed(3)}</td><td className="num">{tot.tcg.toFixed(3)}</td><td className="num">{tot.vcg.toFixed(3)}</td><td /></tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="form-row" style={{ marginTop: 8 }}>
+        <button className="ghost" onClick={() => setItems([...items, { description: '', weight: '', lcg: '', tcg: 0, vcg: '' }])}>+ Add item</button>
+        <label>Entered and checked by<input value={by} onChange={(e) => setBy(e.target.value)} placeholder="Name / rank" /></label>
+        <button style={{ alignSelf: 'end' }} disabled={missing.length > 0} onClick={save}>Save lightship</button>
+        <button className="ghost" style={{ alignSelf: 'end' }} onClick={onCancel}>Cancel</button>
+      </div>
+      {missing.length > 0 && <p className="muted small">Still needed: {missing.join(', ')}.</p>}
     </section>
   );
 }

@@ -12,7 +12,7 @@ export interface ApplyOptions {
 }
 
 export interface Provenance {
-  dataset: string;            // e.g. "HYDRO trim 0", "TANK NO1_FO.P"
+  dataset: string;            // e.g. "HYDRO trim 0", "TANK NO1_FO.P", "LIGHTSHIP"
   method: 'IMPORT' | 'TYPED';
   fileName: string;
   fileSha256: string;
@@ -31,6 +31,15 @@ export const datasetKey = (kind: DatasetKind, o: ApplyOptions) =>
 
 const n = (r: Conversion['rows'][number], k: string) => numVal(r.cells[k]);
 
+/** A "total" line in a lightship table: used to check the sum, not stored as an item. */
+export const isTotalRow = (r: Conversion['rows'][number]) => /\b(total|sum|lightship|light\s*ship|grand)\b/i.test(String(r.cells.description?.value ?? ''));
+
+export function lightshipTotals(items: { weight: number; lcg: number; tcg: number; vcg: number }[]) {
+  const W = items.reduce((s, x) => s + x.weight, 0);
+  const m = (k: 'lcg' | 'tcg' | 'vcg') => (W ? items.reduce((s, x) => s + x.weight * x[k], 0) / W : 0);
+  return { weight: W, lcg: m('lcg'), tcg: m('tcg'), vcg: m('vcg') };
+}
+
 /** The values as they will be stored, in source order: one array of numbers per row. */
 export function expectedRows(kind: DatasetKind, c: Conversion, o: ApplyOptions): (number | string)[][] {
   switch (kind) {
@@ -40,6 +49,7 @@ export function expectedRows(kind: DatasetKind, c: Conversion, o: ApplyOptions):
     case 'WINDAGE': return c.rows.map((r) => [n(r, 'draft')!, n(r, 'area')!, n(r, 'centroidZ')!, n(r, 'underwaterCentroidZ') ?? NaN]);
     case 'OPENINGS': return c.rows.map((r) => [String(r.cells.name?.value ?? ''), n(r, 'x')!, n(r, 'y')!, n(r, 'z')!]);
     case 'WEIGHTS': return c.rows.map((r) => [String(r.cells.description?.value ?? ''), n(r, 'weight')!, n(r, 'lcg')!, n(r, 'tcg')!, n(r, 'vcg')!]);
+    case 'LIGHTSHIP': return c.rows.filter((r) => !isTotalRow(r)).map((r) => [String(r.cells.description?.value ?? ''), n(r, 'weight')!, n(r, 'lcg')!, n(r, 'tcg') ?? 0, n(r, 'vcg')!]);
   }
 }
 
@@ -66,6 +76,7 @@ export function storedRows(kind: DatasetKind, v: Vessel, o: ApplyOptions, lc?: L
     case 'WINDAGE': return v.windage.map((w) => [w.draft, w.area, w.centroidZ, w.underwaterCentroidZ ?? NaN]);
     case 'OPENINGS': return v.openings.map((p) => [p.name, p.x, p.y, p.z]);
     case 'WEIGHTS': return lc ? lc.weights.slice(-(count ?? 0)).map((w) => [w.description, w.weight, w.lcg, w.tcg, w.vcg]) : null;
+    case 'LIGHTSHIP': return v.lightshipItems?.map((w) => [w.description, w.weight, w.lcg, w.tcg, w.vcg]) ?? null;
   }
 }
 
@@ -131,6 +142,10 @@ export function applyToVessel(kind: DatasetKind, v0: Vessel, c: Conversion, o: A
   }
   if (kind === 'WINDAGE') {
     v.windage = c.rows.map((r) => ({ draft: n(r, 'draft')!, area: n(r, 'area')!, centroidZ: n(r, 'centroidZ')!, ...(n(r, 'underwaterCentroidZ') !== undefined ? { underwaterCentroidZ: n(r, 'underwaterCentroidZ') } : {}) })).sort((a, b) => a.draft - b.draft);
+  }
+  if (kind === 'LIGHTSHIP') {
+    v.lightshipItems = c.rows.filter((r) => !isTotalRow(r)).map((r) => ({ description: String(r.cells.description?.value ?? ''), weight: n(r, 'weight')!, lcg: n(r, 'lcg')!, tcg: n(r, 'tcg') ?? 0, vcg: n(r, 'vcg')! }));
+    v.lightship = lightshipTotals(v.lightshipItems);
   }
   if (kind === 'OPENINGS') v.openings = c.rows.map((r) => ({ name: String(r.cells.name?.value ?? ''), x: n(r, 'x')!, y: n(r, 'y')!, z: n(r, 'z')! }));
   return v;

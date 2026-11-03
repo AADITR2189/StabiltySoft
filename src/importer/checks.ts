@@ -3,6 +3,7 @@
 import type { Vessel } from '../engine/types';
 import type { DatasetKind } from './datasets';
 import { numVal, type Conversion } from './convert';
+import { isTotalRow, lightshipTotals } from './apply';
 
 export interface Check { level: 'error' | 'warn' | 'ok'; title: string; detail?: string; rows?: number[] }
 
@@ -136,6 +137,23 @@ export function checkConversion(kind: DatasetKind, c: Conversion, v: Vessel, opt
     const names = c.rows.map((r) => String(r.cells.name?.value ?? ''));
     const dup = names.filter((n, i) => n && names.indexOf(n) !== i);
     out.push(dup.length ? { level: 'warn', title: `Duplicate opening names: ${[...new Set(dup)].join(', ')}` } : { level: 'ok', title: 'Opening names are unique' });
+  }
+  if (kind === 'LIGHTSHIP') {
+    const items = c.rows.filter((r) => !isTotalRow(r));
+    const tot = c.rows.filter(isTotalRow);
+    const t = lightshipTotals(items.map((r) => ({ weight: numVal(r.cells.weight) ?? 0, lcg: numVal(r.cells.lcg) ?? 0, tcg: numVal(r.cells.tcg) ?? 0, vcg: numVal(r.cells.vcg) ?? 0 })));
+    out.push({ level: t.weight > 0 ? 'ok' : 'error', title: `${items.length} items: total ${t.weight.toFixed(2)} t, LCG ${t.lcg.toFixed(3)} m from AP, TCG ${t.tcg.toFixed(3)} m, VCG ${t.vcg.toFixed(3)} m` });
+    if (tot.length === 1) {
+      const T = tot[0];
+      const diffs: string[] = [];
+      const tw = numVal(T.cells.weight);
+      if (tw !== undefined && Math.abs(tw - t.weight) > Math.max(0.001 * tw, 0.02)) diffs.push(`weight ${tw} vs sum ${t.weight.toFixed(2)} t`);
+      for (const k of ['lcg', 'tcg', 'vcg'] as const) { const x = numVal(T.cells[k]); if (x !== undefined && Math.abs(x - t[k]) > 0.01) diffs.push(`${k.toUpperCase()} ${x.toFixed(3)} vs ${t[k].toFixed(3)} m`); }
+      out.push(diffs.length ? { level: 'error', title: 'The items do not add up to the total line of the source', detail: `Source row ${T.src + 1}: ${diffs.join('; ')}. An item is missing, extra or misread.`, rows: [T.src] }
+        : { level: 'ok', title: `Items add up to the total line of the source (row ${T.src + 1}): weight and centres agree` });
+    } else if (tot.length > 1) out.push({ level: 'warn', title: `${tot.length} lines look like totals (skipped as items)`, detail: `Rows ${tot.map((r) => r.src + 1).join(', ')}.` });
+    else out.push({ level: 'warn', title: 'No total line in the table to check the sum against', detail: 'Compare the total shown above with the lightship total in the booklet.' });
+    if (L) out.push(within(c, 'lcg', 'LCG', -0.1 * L, 1.1 * L, 'the ship length'));
   }
   if (kind === 'WEIGHTS') {
     const neg = c.rows.filter((r) => (numVal(r.cells.weight) ?? 0) < 0).map((r) => r.src);

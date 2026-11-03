@@ -406,10 +406,8 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     const Bd = B / d;
     const X1 = tableFactor([2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.4, 3.5], [1.0, 0.98, 0.96, 0.95, 0.93, 0.91, 0.9, 0.88, 0.86, 0.82, 0.8], Bd).value;
     const X2 = tableFactor([0.45, 0.5, 0.55, 0.6, 0.65, 0.7], [0.75, 0.82, 0.89, 0.95, 0.97, 1.0], cb).value;
-    let k: number;
-    if (vessel.bilgeType === 'SHARP') k = 0.7;
-    else if (vessel.bilgeKeelArea <= 0) k = 1.0;
-    else k = tableFactor([0, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0], [1.0, 0.98, 0.95, 0.88, 0.79, 0.74, 0.72, 0.7], (vessel.bilgeKeelArea * 100) / (lwl * B)).value;
+    const kk = rollFactorK(vessel, lwl);
+    const k = kk.k, kBasis = kk.basis;
     // OG uses KG corrected for free surface (conservative choice, documented in Appendix A).
     const OG = kgFluid - d;
     const r = 0.73 + (0.6 * OG) / d;
@@ -452,7 +450,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     special.set(idA, areaCrit);
     if (variant === 'A562' && weather) return; // the IS Code 2008 weather details are already shown
     weather = {
-      P, A, Z, hA, lw1, lw2, Bd, Cb: cb, X1, X2, k, r, OG, C, Troll, s,
+      P, A, Z, hA, lw1, lw2, Bd, Cb: cb, X1, X2, k, kBasis, r, OG, C, Troll, s,
       theta0, theta1, thetaR, thetaX, thetaC, theta2, areaA, areaB, deckEdgeAngle, side,
     };
   }
@@ -971,4 +969,21 @@ function fmt(v: number, unit: string): string {
   if (unit === '°') return `${v.toFixed(1)}°`;
   if (unit === '') return v.toFixed(3);
   return `${v.toFixed(3)} ${unit}`;
+}
+
+/**
+ * Roll factor k, IS Code 2008 Part A 2.3.4 (A.562(14) 2.1.6): ships with bilge keels or a bar keel
+ * use the table on A_k·100/(L·B) (L = waterline length); without them k = 1.0 for a round bilge
+ * and k = 0.7 for a sharp bilge. A known bilge keel area always takes precedence.
+ */
+export function rollFactorK(vessel: Vessel, lwl: number): { k: number; basis: string } {
+  const keels = vessel.hasBilgeKeels ?? vessel.bilgeKeelArea > 0;
+  if (keels && vessel.bilgeKeelArea > 0) {
+    const ratio = (vessel.bilgeKeelArea * 100) / (lwl * vessel.breadth);
+    const k = tableFactor([0, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0], [1.0, 0.98, 0.95, 0.88, 0.79, 0.74, 0.72, 0.7], ratio).value;
+    return { k, basis: `bilge keels A_k = ${vessel.bilgeKeelArea} m², A_k·100/(L·B) = ${ratio.toFixed(3)} → table` };
+  }
+  return vessel.bilgeType === 'SHARP'
+    ? { k: 0.7, basis: 'sharp bilge, no bilge keel area → k = 0.7' }
+    : { k: 1.0, basis: 'round bilge, no bilge keel area → k = 1.0' };
 }
