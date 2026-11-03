@@ -229,7 +229,7 @@ Down-flooding angle is the heel at which openings that cannot be closed weathert
 
    This ignores the heel-induced change in sinkage and trim. The report labels it **"Approximate — not hull-form based"**. A hull-form-based method arrives in Phase 3 with the 3D hull model.
 
-The deck-edge immersion angle (needed for the Weather Criterion θ₀ limit) uses the same two-source logic with the deck-at-side point at midship.
+The deck-edge immersion angle (needed for the Weather Criterion θ₀ limit) uses the same two-source logic. The computed method uses the deck at side at the **deeper end** of the ship (lowest freeboard, sheer ignored): θ_deck = atan((D − max(T_AP, T_FP)) / (B/2)). This reproduces the MARSOL SPLENDOR booklet (6.53° vs 6.54° for Condition 2).
 
 ---
 

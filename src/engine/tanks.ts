@@ -34,7 +34,10 @@ export function resolveTank(
       volume = input.value / density;
       break;
     case 'SOUNDING': {
-      const snd = cal.map((r) => r.sounding);
+      if (cal.some((r) => r.sounding === undefined)) {
+        throw new EngineError('NO_SOUNDING_TABLE', `${tank.name}: no sounding table is available. Enter the tank by %, volume or weight.`);
+      }
+      const snd = cal.map((r) => r.sounding as number);
       assertIncreasing(snd, `${tank.name} calibration (sounding)`);
       volume = lerp(snd, vols, input.value, `${tank.name} sounding`);
       break;
@@ -63,7 +66,7 @@ export function resolveTank(
     tcg = lerp(vols, cal.map((r) => r.tcg), volume, label);
     vcg = lerp(vols, cal.map((r) => r.vcg), volume, label);
     const slack = volume < tank.capacity * (1 - FULL_TOL);
-    if (slack) {
+    if (slack && fsmMethod !== 'MANUAL_TOTAL') {
       const inertia =
         fsmMethod === 'MAXIMUM'
           ? Math.max(...cal.map((r) => r.inertia))

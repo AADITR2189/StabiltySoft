@@ -9,7 +9,10 @@ type Pt = { heel: number; gz: number };
 
 export function GzChart({ r, mode = 'plain' }: { r: Results; mode?: Mode }) {
   const W = 800, H = 380, m = { l: 56, r: 24, t: 26, b: 44 };
-  const pts = r.gzCurve;
+  // Weather diagram is drawn on the side the wind acts towards (mirrored for port).
+  const mirror = mode === 'weather' && r.weather?.side === -1;
+  const pts = mirror ? r.gzCurve.map((p) => ({ heel: p.heel, gz: p.gz + 2 * r.tcg * Math.cos((p.heel * Math.PI) / 180) })) : r.gzCurve;
+  const tcgS = mirror ? -r.tcg : r.tcg;
   const xMax = pts[pts.length - 1]?.heel ?? 90;
   const w = mode === 'weather' ? r.weather : null;
   const xMin = w ? Math.min(-10, Math.floor((w.thetaR - 5) / 10) * 10) : 0;
@@ -18,7 +21,7 @@ export function GzChart({ r, mode = 'plain' }: { r: Results; mode?: Mode }) {
   const neg: Pt[] = [];
   for (let a = xMin; a < 0; a++) {
     const p = pts[-a];
-    if (p) neg.push({ heel: a, gz: -p.gz - 2 * r.tcg * Math.cos((a * Math.PI) / 180) });
+    if (p) neg.push({ heel: a, gz: -p.gz - 2 * tcgS * Math.cos((a * Math.PI) / 180) });
   }
   const curve: Pt[] = [...neg, ...pts];
   const gzAt = (x: number) => interp(curve, x);
@@ -75,7 +78,7 @@ export function GzChart({ r, mode = 'plain' }: { r: Results; mode?: Mode }) {
           <text x={sx(x)} y={H - m.b + 16} textAnchor="middle" className="tick">{x}</text>
         </g>
       ))}
-      <text x={(W + m.l) / 2} y={H - 6} textAnchor="middle" className="label">Heel angle (°)</text>
+      <text x={(W + m.l) / 2} y={H - 6} textAnchor="middle" className="label">{mirror ? 'Heel angle to port (°)' : 'Heel angle (°)'}</text>
       <text x={14} y={(H - m.b) / 2} textAnchor="middle" className="label" transform={`rotate(-90 14 ${(H - m.b) / 2})`}>GZ (m)</text>
 
       {mode === 'general' && (

@@ -6,21 +6,23 @@
 //   Heel positive to starboard, trim positive by the stern.
 
 export interface HydroRow {
-  draft: number;        // m (even keel, moulded)
+  draft: number;        // m (even keel at LCF, or at the table origin for trimmed tables)
   displacement: number; // t at rhoRef
   lcb: number;          // m from AP
   lcf: number;          // m from AP
-  kb: number;           // m
   kmt: number;          // m
   tpc: number;          // t/cm at rhoRef
   mtc: number;          // t·m/cm at rhoRef
-  cb: number;           // block coefficient
-  lwl: number;          // m
+  cb?: number;          // block coefficient (optional; derived if missing)
+  lwl?: number;         // m (optional; LBP used if missing)
+  kb?: number;
 }
 
 export interface HydroTable {
   rhoRef: number;
   rows: HydroRow[];
+  /** Optional trimmed tables (free-trim method). Trim + by stern, m over LBP. */
+  trims?: { trim: number; rows: HydroRow[] }[];
 }
 
 /** KN cross curves. kn[i][j] belongs to displacements[i] (t at rhoRef) and angles[j] (deg). */
@@ -29,10 +31,12 @@ export interface KNTable {
   displacements: number[];
   angles: number[];
   kn: number[][];
+  /** Optional KN tables for several static trims (same angles). */
+  trims?: { trim: number; displacements: number[]; kn: number[][] }[];
 }
 
 export interface TankCalRow {
-  sounding: number; // m
+  sounding?: number; // m (optional: some booklets give only % tables)
   volume: number;   // m³
   lcg: number;
   tcg: number;
@@ -58,6 +62,8 @@ export interface WindRow {
   draft: number;
   area: number;      // projected lateral area above WL (m²)
   centroidZ: number; // height of area centroid above base (m)
+  /** Height above base of the centre of the underwater lateral area (m). If missing, half the draft is used. */
+  underwaterCentroidZ?: number;
 }
 
 export interface Opening {
@@ -90,7 +96,12 @@ export interface Vessel {
   tanks: Tank[];
   windage: WindRow[];
   openings: Opening[];
+  /** Load line (summer) draft at midship, m. */
   maxDraft?: number;
+  /** Stability groups that apply to this vessel by default (ids). */
+  criteriaGroups?: string[];
+  /** X (from AP) of the draft origin used by trimmed hydrostatic tables (default LBP/2). */
+  draftOriginX?: number;
 }
 
 export type TankInput =
@@ -114,9 +125,11 @@ export interface WeightItem {
   vcg: number;
   windArea?: number;     // extra lateral windage (e.g. deck cargo), m²
   windCentroidZ?: number;
+  fsm?: number;          // free surface moment carried by this item (t·m)
 }
 
-export type FsmMethod = 'ACTUAL' | 'MAXIMUM';
+/** ACTUAL / MAXIMUM from tank tables; MANUAL_TOTAL = a total FSM entered by the user (e.g. as prescribed by the approved booklet). */
+export type FsmMethod = 'ACTUAL' | 'MAXIMUM' | 'MANUAL_TOTAL';
 
 export interface LoadCase {
   id: string;
@@ -124,6 +137,8 @@ export interface LoadCase {
   type: string;
   seaDensity: number;
   fsmMethod: FsmMethod;
+  /** Total free surface moment (t·m) when fsmMethod = MANUAL_TOTAL. */
+  fsmTotal?: number;
   tanks: Record<string, TankStatus>;
   weights: WeightItem[];
   gzMaxAngle?: number; // default 90
@@ -196,6 +211,8 @@ export interface WeatherDetail {
   theta0: number; theta1: number; thetaR: number; thetaX: number | null; thetaC: number | null; theta2: number;
   areaA: number; areaB: number;
   deckEdgeAngle: number;
+  /** Side the wind acts towards: 1 = starboard, −1 = port (side of the static heel). Angles are given on that side. */
+  side: 1 | -1;
 }
 
 export interface Results {

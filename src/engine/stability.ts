@@ -7,6 +7,7 @@ import type {
   CriteriaGroupResult, CriterionResult, GzPoint, LoadCase, Results, TankResult, Vessel, Warning, WeatherDetail,
 } from './types';
 import { CRITERIA_GROUPS, DEFAULT_GROUP_IDS } from './criteriaGroups';
+import { knAtCondition, solveHydrostatics } from './hydro';
 
 export const ENGINE_VERSION = '0.1.0';
 const G = 9.81;
@@ -26,15 +27,19 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
     ...tanks.map((t) => ({ group: 'Tanks', w: t.weight, x: t.lcg, y: t.tcg, z: t.vcg })),
     ...lc.weights.map((w) => ({ group: 'Variable weights', w: w.weight, x: w.lcg, y: w.tcg, z: w.vcg })),
   ];
-  for (const it of items) {
-    if (it.w < 0) throw new EngineError('NEGATIVE_QUANTITY', 'Weights cannot be negative.');
+  // Negative weight items are allowed: they remove a weight already included in the lightship
+  // (e.g. a crane boom moved from its stowed position). They are reported as a warning.
+  for (const w of lc.weights) {
+    if (w.weight < 0) warnings.push({ code: 'WEIGHT_REMOVED', message: `"${w.description}" removes ${Math.abs(w.weight).toFixed(2)} t (negative weight).` });
   }
   const disp = kahanSum(items.map((i) => i.w));
   if (!(disp > 0)) throw new EngineError('NO_DISPLACEMENT', 'Total displacement must be greater than 0.');
   const lcg = kahanSum(items.map((i) => i.w * i.x)) / disp;
   const tcg = kahanSum(items.map((i) => i.w * i.y)) / disp;
   const kg = kahanSum(items.map((i) => i.w * i.z)) / disp;
-  const sumFsm = kahanSum(tanks.map((t) => t.fsm));
+  const sumFsm = lc.fsmMethod === 'MANUAL_TOTAL'
+    ? (lc.fsmTotal ?? 0)
+    : kahanSum([...tanks.map((t) => t.fsm), ...lc.weights.map((w) => w.fsm ?? 0)]);
 
   const summary = ['Lightship', 'Tanks', 'Variable weights'].map((group) => {
     const g = items.filter((i) => i.group === group);
@@ -48,34 +53,16 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
     };
   });
 
-  // ---------- §A.5 Hydrostatics ----------
-  const rows = vessel.hydro.rows;
-  const dispCol = rows.map((r) => r.displacement);
-  assertIncreasing(dispCol, 'Hydrostatic table (displacement)');
-  assertIncreasing(rows.map((r) => r.draft), 'Hydrostatic table (draft)');
-  const rhoRef = vessel.hydro.rhoRef;
-  const dispRef = (disp * rhoRef) / lc.seaDensity;
-  const h = (key: keyof (typeof rows)[number]) => lerp(dispCol, rows.map((r) => r[key]), dispRef, 'Hydrostatic table');
-  const draft = h('draft');
-  const lcb = h('lcb');
-  const lcf = h('lcf');
-  const kmt = h('kmt');
-  const cb = h('cb');
-  const lwl = h('lwl');
-  const mtc = (h('mtc') * lc.seaDensity) / rhoRef;
-  const tpc = (h('tpc') * lc.seaDensity) / rhoRef;
-
+  // ---------- §A.5 Hydrostatics (even keel or free trim) ----------
+  const hs = solveHydrostatics(vessel, disp, lcg, lc.seaDensity, warnings);
+  const { draft, lcb, lcf, kmt, mtc, tpc, trim, draftAP, draftFP, draftMS } = hs;
   const L = vessel.lbp;
-  const trim = (disp * (lcb - lcg)) / (100 * mtc);
-  const draftAP = draft + (trim * lcf) / L;
-  const draftFP = draft - (trim * (L - lcf)) / L;
-  const draftMS = draft + (trim * (lcf - L / 2)) / L;
   const draftMean = (draftAP + draftFP) / 2;
-  if (Math.abs(trim) > 0.01 * L) {
-    warnings.push({ code: 'LARGE_TRIM_ACCURACY', message: `Trim ${trim.toFixed(2)} m exceeds 1 % of LBP; even-keel hydrostatics lose accuracy.` });
-  }
-  if (vessel.maxDraft !== undefined && Math.max(draftAP, draftFP) > vessel.maxDraft) {
-    warnings.push({ code: 'MAX_DRAFT_EXCEEDED', message: `Maximum draft ${Math.max(draftAP, draftFP).toFixed(3)} m exceeds the limit of ${vessel.maxDraft.toFixed(3)} m.` });
+  const cb = hs.cb ?? (disp / lc.seaDensity) / (L * vessel.breadth * draftMean);
+  const lwl = hs.lwl ?? L;
+  // Load line draft is measured at midship; 5 mm tolerance for table rounding.
+  if (vessel.maxDraft !== undefined && draftMS > vessel.maxDraft + 0.005) {
+    warnings.push({ code: 'MAX_DRAFT_EXCEEDED', message: `Draft at midship ${draftMS.toFixed(3)} m exceeds the load line draft of ${vessel.maxDraft.toFixed(3)} m.` });
   }
 
   const fsc = sumFsm / disp;
@@ -85,13 +72,9 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
 
   // ---------- §A.7 GZ curve ----------
   const kn = vessel.kn;
-  assertIncreasing(kn.displacements, 'KN table (displacement)');
   assertIncreasing(kn.angles, 'KN table (heel angle)');
-  const knDispRef = (disp * kn.rhoRef) / lc.seaDensity;
-  // KN interpolated across displacement with a shape-preserving cubic (PCHIP); see Appendix A §A.2.
-  lerp(kn.displacements, kn.displacements, knDispRef, 'KN table'); // range check (no extrapolation)
-  const knAtAngles = kn.angles.map((_, j) => pchip(kn.displacements, kn.kn.map((row) => row[j]))(knDispRef));
-  const knFn = pchip(kn.angles, knAtAngles);
+  const knc = knAtCondition(kn, disp, lc.seaDensity, trim);
+  const knFn = pchip(knc.angles, knc.values);
   const maxTableAngle = kn.angles[kn.angles.length - 1];
   const knOf = (deg: number) => Math.sign(deg) * knFn(Math.abs(deg));
   const gz = (deg: number) => knOf(deg) - kgFluid * Math.sin(deg * DEG) - tcg * Math.cos(deg * DEG);
@@ -157,10 +140,11 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
   if (floodOpening && floodAngle <= 0) {
     warnings.push({ code: 'OPENING_SUBMERGED', message: `Opening "${floodOpening}" is below the waterline.` });
   }
-  const deckEdgeAngle = Math.atan(Math.max(0, vessel.depth - draftMS) / (vessel.breadth / 2)) / DEG;
+  // Deck edge immersion: lowest freeboard along the length (deck at side, no sheer), i.e. at the deeper end.
+  const deckEdgeAngle = Math.atan(Math.max(0, vessel.depth - Math.max(draftAP, draftFP, draftMS)) / (vessel.breadth / 2)) / DEG;
 
   // ---------- Stability groups selected for this load case ----------
-  const selected = new Set(lc.criteriaGroups ?? DEFAULT_GROUP_IDS);
+  const selected = new Set(lc.criteriaGroups ?? vessel.criteriaGroups ?? DEFAULT_GROUP_IDS);
 
   // ---------- §A.8 Group IS2008_GENERAL (IS Code 2008 Part A §2.2) ----------
   const criteria: CriterionResult[] = [];
@@ -177,6 +161,22 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
   criteria.push(ge('IS-2.2.2', 'Righting lever GZ at an angle ≥ 30°', 'IS Code 2008 A 2.2.2', 'm', 0.2, gzAt30));
   criteria.push(ge('IS-2.2.3', 'Angle of maximum GZ', 'IS Code 2008 A 2.2.3', '°', 25, gzMaxAngle));
   criteria.push(ge('IS-2.2.4', 'Initial metacentric height GM₀', 'IS Code 2008 A 2.2.4', 'm', 0.15, gmFluid));
+
+  // ---------- Group OSV_INTACT (IS Code 2008 Part B 2.4.5, OSV equivalent criteria) ----------
+  if (selected.has('OSV_INTACT')) {
+    const tm = gzMaxAngle;
+    let reqA: number, upTo: number, label: string;
+    if (tm <= 15) { reqA = 0.07; upTo = 15; label = 'Area under GZ curve 0° to 15° (θmax ≤ 15°)'; }
+    else if (tm >= 30) { reqA = 0.055; upTo = 30; label = 'Area under GZ curve 0° to 30° (θmax ≥ 30°)'; }
+    else { reqA = 0.055 + 0.001 * (30 - tm); upTo = tm; label = `Area under GZ curve 0° to θmax (${tm.toFixed(2)}°): 0.055 + 0.001·(30 − θmax)`; }
+    const osv = (c: CriterionResult) => { c.regulation = 'OSV 2.2 / IS 2008 B 2.4.5'; return c; };
+    criteria.push(osv(ge('OSV-1', label, '', 'm·rad', reqA, area(0, Math.min(upTo, floodAngle)))));
+    criteria.push(osv(ge('OSV-2', `Area under GZ curve 0° to ${lim40 < 40 ? 'θf (' + lim40.toFixed(1) + '°)' : '40°'}`, '', 'm·rad', 0.09, area(0, lim40))));
+    criteria.push(osv(ge('OSV-3', `Area under GZ curve 30° to ${lim40 < 40 ? 'θf (' + lim40.toFixed(1) + '°)' : '40°'}`, '', 'm·rad', 0.03, lim40 > 30 ? area(30, lim40) : 0)));
+    criteria.push(osv(ge('OSV-4', 'Righting lever GZ at an angle ≥ 30°', '', 'm', 0.2, gzAt30)));
+    criteria.push(osv(ge('OSV-5', 'Angle of maximum GZ', '', '°', 15, tm)));
+    criteria.push(osv(ge('OSV-6', 'Initial metacentric height GM₀', '', 'm', 0.15, gmFluid)));
+  }
 
   // ---------- §A.9 Group IS2008_WEATHER (IS Code 2008 Part A §2.3) ----------
   let weather: WeatherDetail | null = null;
@@ -195,8 +195,8 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
   function weatherCriterion(): WeatherDetail {
     const wd = vessel.windage.map((r) => r.draft);
     assertIncreasing(wd, 'Windage table (draft)');
-    let A = lerp(wd, vessel.windage.map((r) => r.area), draftMean, 'Windage table');
-    let hA = lerp(wd, vessel.windage.map((r) => r.centroidZ), draftMean, 'Windage table');
+    let A = lerp(wd, vessel.windage.map((r) => r.area), draftMS, 'Windage table');
+    let hA = lerp(wd, vessel.windage.map((r) => r.centroidZ), draftMS, 'Windage table');
     const extra = lc.weights.filter((w) => (w.windArea ?? 0) > 0);
     if (extra.length) {
       const aSum = A + kahanSum(extra.map((w) => w.windArea!));
@@ -204,7 +204,9 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
       A = aSum;
     }
     const d = draftMean;
-    const Z = hA - d / 2;
+    const hasU = vessel.windage.every((r) => typeof r.underwaterCentroidZ === 'number');
+    const hU = hasU ? lerp(wd, vessel.windage.map((r) => r.underwaterCentroidZ as number), draftMS, 'Windage table') : d / 2;
+    const Z = hA - hU;
     const lw1 = (WIND_P * A * Z) / (1000 * G * disp);
     const lw2 = 1.5 * lw1;
 
@@ -230,20 +232,24 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
     if (kgd < -0.3 || kgd > 0.5) warnings.push({ code: 'WEATHER_PARAM_RANGE', message: `KG/d − 1 = ${kgd.toFixed(2)} is outside the validated range (−0.3 to 0.5) of the roll-angle formula.` });
     if (Troll > 20) warnings.push({ code: 'WEATHER_PARAM_RANGE', message: `Roll period ${Troll.toFixed(1)} s exceeds 20 s (validated range of the roll-angle formula).` });
 
-    const theta0 = firstCrossing(gz, lw1, 0, gzEnd, 0.05);
+    // Wind acts towards the side to which the ship already heels (worst case). For port,
+    // the curve is mirrored so the same formulas apply: gzS(φ) = −GZ(−φ).
+    const side = heel < 0 ? -1 : 1;
+    const gzS = side > 0 ? gz : (x: number) => -gz(-x);
+    const theta0 = firstCrossing(gzS, lw1, 0, gzEnd, 0.05);
     if (theta0 === null) throw new EngineError('WIND_EXCEEDS_GZ', 'steady wind lever exceeds the maximum righting lever.');
     const thetaR = theta0 - theta1;
     if (-thetaR > maxTableAngle) throw new EngineError('OUT_OF_TABLE_RANGE', `roll-back angle ${thetaR.toFixed(1)}° exceeds the KN table range.`);
-    const thetaX = firstCrossing(gz, lw2, 0, gzEnd, 0.05);
+    const thetaX = firstCrossing(gzS, lw2, 0, gzEnd, 0.05);
     let thetaC: number | null = null;
     let areaA = 0;
     let areaB = 0;
     let theta2 = Math.min(floodAngle, 50);
     if (thetaX !== null) {
-      thetaC = firstCrossing(gz, lw2, thetaX + 0.01, gzEnd, 0.05);
+      thetaC = firstCrossing(gzS, lw2, thetaX + 0.01, gzEnd, 0.05);
       theta2 = Math.min(floodAngle, 50, thetaC ?? Infinity);
-      areaA = integrateDeg((x) => lw2 - gz(x), thetaR, thetaX);
-      areaB = theta2 > thetaX ? integrateDeg((x) => gz(x) - lw2, thetaX, theta2) : 0;
+      areaA = integrateDeg((x) => lw2 - gzS(x), thetaR, thetaX);
+      areaB = theta2 > thetaX ? integrateDeg((x) => gzS(x) - lw2, thetaX, theta2) : 0;
     }
 
     const heelLimit = Math.min(16, 0.8 * deckEdgeAngle);
@@ -257,7 +263,7 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
 
     return {
       P: WIND_P, A, Z, hA, lw1, lw2, Bd, Cb: cb, X1, X2, k, r, OG, C, Troll, s,
-      theta0, theta1, thetaR, thetaX, thetaC, theta2, areaA, areaB, deckEdgeAngle,
+      theta0, theta1, thetaR, thetaX, thetaC, theta2, areaA, areaB, deckEdgeAngle, side,
     };
   }
 
@@ -283,6 +289,7 @@ export function calculate(vessel: Vessel, lc: LoadCase): Results {
   const groupCodes: Record<string, string[]> = {
     IS2008_GENERAL: ['IS-2.2.1.1', 'IS-2.2.1.2', 'IS-2.2.1.3', 'IS-2.2.2', 'IS-2.2.3', 'IS-2.2.4'],
     IS2008_WEATHER: ['IS-2.3-HEEL', 'IS-2.3-AREA'],
+    OSV_INTACT: ['OSV-1', 'OSV-2', 'OSV-3', 'OSV-4', 'OSV-5', 'OSV-6'],
   };
   const groups: CriteriaGroupResult[] = CRITERIA_GROUPS.filter((g) => selected.has(g.id)).map((g) => {
     const list = criteria.filter((c) => groupCodes[g.id]?.includes(c.code));

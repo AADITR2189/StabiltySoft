@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { demoVessel } from './data/demoVessel';
+import { VESSELS } from './data/vessels';
 import { calculate, ENGINE_VERSION } from './engine/stability';
 import { EngineError } from './engine/math';
 import type { Results } from './engine/types';
@@ -16,8 +16,9 @@ const NAV: { id: Screen; label: string; icon: string }[] = [
 ];
 
 export default function App() {
-  const vessel = demoVessel;
   const store = useLoadCases();
+  const vessel = store.entry.vessel;
+  const status = store.entry.status;
   const lc = store.active;
   const [screen, setScreen] = useState<Screen>('dashboard');
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -52,8 +53,11 @@ export default function App() {
       <header className="topbar">
         <div className="brand">⚓ StabilitySoft</div>
         <div className="ctx">
-          <span className="ctx-vessel">{vessel.name}</span>
+          <select className="ctx-vessel" aria-label="Vessel" value={store.entry.id} onChange={(e) => store.setVessel(e.target.value)}>
+            {VESSELS.map((v) => <option key={v.id} value={v.id}>{v.vessel.name}</option>)}
+          </select>
           <span className="muted">IMO {vessel.imo}</span>
+          <span className={`data-badge ${status.toLowerCase()}`}>{status === 'UNVERIFIED' ? 'Data not verified' : status === 'DEMO' ? 'Demo data' : 'Verified'}</span>
         </div>
         <label className="ctx">
           <span className="muted">Load case</span>
@@ -83,14 +87,14 @@ export default function App() {
           )}
           {screen === 'loadcase' && <LoadCaseEditor vessel={vessel} lc={lc} r={r} onChange={store.update} />}
           {screen === 'criteria' && (r ? <Criteria r={r} /> : <div className="error-box">{error}</div>)}
-          {screen === 'vessel' && <VesselData vessel={vessel} />}
+          {screen === 'vessel' && <VesselData vessel={vessel} status={status} source={store.entry.source} />}
         </div>
         {showSidebar && <ResultsSidebar r={r} error={error} />}
       </main>
 
       <footer className="statusbar">
         <span className={online ? 'ok' : 'off'}>● {online ? 'Online' : 'Offline: all functions available'}</span>
-        <span>Data: DEMO vessel</span>
+        <span>Data: {status === 'UNVERIFIED' ? 'extracted from booklet, NOT verified' : status === 'DEMO' ? 'demo vessel' : 'verified'}</span>
         <span>Engine {ENGINE_VERSION}</span>
         <span className="disclaimer">⚠ Not an approved stability instrument. For planning and testing only.</span>
       </footer>

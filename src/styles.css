@@ -224,3 +224,10 @@ table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 .legend .l-1 { height: 10px; border: none; background: var(--area-1); }
 .legend .l-2 { height: 10px; border: none; background: var(--area-2); }
 .legend .l-ref { border-color: var(--ref); border-top-style: dashed; }
+
+.data-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
+.data-badge.unverified { color: var(--warn); border-color: var(--warn); }
+.data-badge.demo { color: var(--muted); }
+.data-badge.verified { color: var(--pass); border-color: var(--pass); }
+.warn-notice { border-color: var(--warn); }
+select.ctx-vessel { font-weight: 600; }

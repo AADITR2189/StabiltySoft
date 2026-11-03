@@ -1,21 +1,24 @@
-// Local persistence of load cases (browser storage). Works offline.
+// Local persistence of load cases per vessel (browser storage). Works offline.
 // Phase 1 MVP: localStorage. Planned: IndexedDB + sync (see docs/03-System-Architecture.md §10).
 import { useEffect, useState } from 'react';
-import { demoLoadCase } from './data/demoVessel';
+import { VESSELS } from './data/vessels';
 import type { LoadCase } from './engine/types';
 
-const KEY = 'stabilitysoft.loadcases.v1';
-const ACTIVE = 'stabilitysoft.active.v1';
+const KEY = 'stabilitysoft.loadcases.v2';
+const ACTIVE = 'stabilitysoft.active.v2';
 
-function load(): LoadCase[] {
+type Saved = Record<string, LoadCase[]>; // vesselId -> load cases
+
+function load(): Saved {
+  let saved: Saved = {};
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const list = JSON.parse(raw) as LoadCase[];
-      if (Array.isArray(list) && list.length) return list;
-    }
+    if (raw) saved = JSON.parse(raw) as Saved;
   } catch { /* storage unavailable */ }
-  return [structuredClone(demoLoadCase)];
+  for (const v of VESSELS) {
+    if (!Array.isArray(saved[v.id]) || saved[v.id].length === 0) saved[v.id] = structuredClone(v.defaultLoadCases);
+  }
+  return saved;
 }
 
 export function newId(): string {
@@ -23,39 +26,44 @@ export function newId(): string {
 }
 
 export function useLoadCases() {
-  const [cases, setCases] = useState<LoadCase[]>(load);
-  const [activeId, setActiveId] = useState<string>(() => {
-    try { return localStorage.getItem(ACTIVE) ?? ''; } catch { return ''; }
+  const [all, setAll] = useState<Saved>(load);
+  const [active, setActiveState] = useState<{ vesselId: string; caseId: string }>(() => {
+    try {
+      const a = JSON.parse(localStorage.getItem(ACTIVE) ?? 'null');
+      if (a && VESSELS.some((v) => v.id === a.vesselId)) return a;
+    } catch { /* ignore */ }
+    return { vesselId: VESSELS[0].id, caseId: '' };
   });
 
-  useEffect(() => {
-    try { localStorage.setItem(KEY, JSON.stringify(cases)); } catch { /* ignore */ }
-  }, [cases]);
-  useEffect(() => {
-    try { localStorage.setItem(ACTIVE, activeId); } catch { /* ignore */ }
-  }, [activeId]);
+  useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(all)); } catch { /* ignore */ } }, [all]);
+  useEffect(() => { try { localStorage.setItem(ACTIVE, JSON.stringify(active)); } catch { /* ignore */ } }, [active]);
 
-  const active = cases.find((c) => c.id === activeId) ?? cases[0];
+  const entry = VESSELS.find((v) => v.id === active.vesselId) ?? VESSELS[0];
+  const cases = all[entry.id] ?? [];
+  const lc = cases.find((c) => c.id === active.caseId) ?? cases[0];
+  const setCases = (fn: (cs: LoadCase[]) => LoadCase[]) => setAll((a) => ({ ...a, [entry.id]: fn(a[entry.id] ?? []) }));
 
   return {
+    entry,
     cases,
-    active,
-    setActive: (id: string) => setActiveId(id),
-    update: (lc: LoadCase) => setCases((cs) => cs.map((c) => (c.id === lc.id ? lc : c))),
+    active: lc,
+    setVessel: (vesselId: string) => setActiveState({ vesselId, caseId: '' }),
+    setActive: (caseId: string) => setActiveState({ vesselId: entry.id, caseId }),
+    update: (x: LoadCase) => setCases((cs) => cs.map((c) => (c.id === x.id ? x : c))),
     duplicate: (id: string) => {
       const src = cases.find((c) => c.id === id);
       if (!src) return;
       const copy: LoadCase = { ...structuredClone(src), id: newId(), name: `${src.name} (copy)` };
       setCases((cs) => [...cs, copy]);
-      setActiveId(copy.id);
+      setActiveState({ vesselId: entry.id, caseId: copy.id });
     },
     create: () => {
-      const lc: LoadCase = { ...structuredClone(demoLoadCase), id: newId(), name: 'New load case' };
-      setCases((cs) => [...cs, lc]);
-      setActiveId(lc.id);
+      const base = structuredClone(entry.defaultLoadCases[0]);
+      const lc2: LoadCase = { ...base, id: newId(), name: 'New load case' };
+      setCases((cs) => [...cs, lc2]);
+      setActiveState({ vesselId: entry.id, caseId: lc2.id });
     },
-    remove: (id: string) => {
-      setCases((cs) => (cs.length > 1 ? cs.filter((c) => c.id !== id) : cs));
-    },
+    remove: (id: string) => setCases((cs) => (cs.length > 1 ? cs.filter((c) => c.id !== id) : cs)),
+    resetToBooklet: () => setCases(() => structuredClone(entry.defaultLoadCases)),
   };
 }

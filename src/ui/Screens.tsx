@@ -234,10 +234,17 @@ function CritRow({ c }: { c: CriterionResult }) {
   );
 }
 
-export function VesselData({ vessel }: { vessel: Vessel }) {
+export function VesselData({ vessel, status, source }: { vessel: Vessel; status: string; source: string }) {
   return (
     <div className="stack">
-      <div className="notice">This is the <strong>demo vessel</strong> (a box-shaped barge with exactly calculable data). Your real vessel data will be loaded here after you provide it and we verify it together.</div>
+      {status === 'DEMO' ? (
+        <div className="notice">This is the <strong>demo vessel</strong> (a box-shaped barge with exactly calculable data).</div>
+      ) : (
+        <div className="notice warn-notice">
+          <strong>Data extracted from the booklet, not yet verified.</strong> Source: {source}. All values must be checked against the booklet pages before this vessel is used for real decisions.
+          {vessel.hydro.trims && <> Hydrostatics and cross curves: {vessel.hydro.trims.length} trim tables (free-trim method).</>}
+        </div>
+      )}
       <div className="cards">
         <section className="panel">
           <div className="panel-head"><h2>General particulars</h2></div>

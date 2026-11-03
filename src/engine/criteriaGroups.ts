@@ -22,6 +22,14 @@ export const CRITERIA_GROUPS: CriteriaGroupDef[] = [
     chart: 'GENERAL',
   },
   {
+    id: 'OSV_INTACT',
+    name: 'OSV Intact Criteria (IS Code 2008 equivalent)',
+    shortName: 'OSV Intact',
+    regulation: 'IS Code 2008 Part B 2.4.5 / OSV Chemical Code Ch.2, 2.2',
+    description: 'Equivalent criteria for offshore supply vessels: area to the angle of maximum GZ (0.055 + 0.001·(30° − θmax)), maximum GZ at 15° or more.',
+    chart: 'GENERAL',
+  },
+  {
     id: 'IS2008_WEATHER',
     name: 'IS Code 2008: Weather Criterion',
     shortName: 'Weather Criterion',
@@ -31,4 +39,4 @@ export const CRITERIA_GROUPS: CriteriaGroupDef[] = [
   },
 ];
 
-export const DEFAULT_GROUP_IDS = CRITERIA_GROUPS.map((g) => g.id);
+export const DEFAULT_GROUP_IDS = ['IS2008_GENERAL', 'IS2008_WEATHER'];

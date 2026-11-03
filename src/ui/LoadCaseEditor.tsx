@@ -36,7 +36,8 @@ export function LoadCaseEditor({ vessel, lc, r, onChange }: Props) {
       let snd = 0;
       for (let i = 0; i < cal.length - 1; i++) {
         if (cal[i].volume <= v && v <= cal[i + 1].volume) {
-          snd = cal[i].sounding + ((v - cal[i].volume) / (cal[i + 1].volume - cal[i].volume || 1)) * (cal[i + 1].sounding - cal[i].sounding);
+          const s0 = cal[i].sounding ?? 0, s1 = cal[i + 1].sounding ?? 0;
+          snd = s0 + ((v - cal[i].volume) / (cal[i + 1].volume - cal[i].volume || 1)) * (s1 - s0);
           break;
         }
       }
@@ -72,13 +73,19 @@ export function LoadCaseEditor({ vessel, lc, r, onChange }: Props) {
             <select value={lc.fsmMethod} onChange={(e) => set({ fsmMethod: e.target.value as LoadCase['fsmMethod'] })}>
               <option value="ACTUAL">Actual filling</option>
               <option value="MAXIMUM">Maximum (conservative)</option>
+              <option value="MANUAL_TOTAL">Total FSM entered manually</option>
             </select>
           </label>
+          {lc.fsmMethod === 'MANUAL_TOTAL' && (
+            <label>Total FSM (t·m)
+              <NumInput value={lc.fsmTotal ?? 0} onCommit={(v) => set({ fsmTotal: v })} />
+            </label>
+          )}
         </div>
         <fieldset className="group-select">
           <legend>Stability groups to check</legend>
           {CRITERIA_GROUPS.map((g) => {
-            const sel = lc.criteriaGroups ?? DEFAULT_GROUP_IDS;
+            const sel = lc.criteriaGroups ?? vessel.criteriaGroups ?? DEFAULT_GROUP_IDS;
             const on = sel.includes(g.id);
             return (
               <label key={g.id} className="check">
@@ -116,7 +123,7 @@ export function LoadCaseEditor({ vessel, lc, r, onChange }: Props) {
                     <td><span className={`dot g-${t.group}`} />{t.name}</td>
                     <td>
                       <select value={st.mode} onChange={(e) => setTankMode(t.id, e.target.value as TankInput['mode'])}>
-                        {MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                        {MODES.filter((m) => m.value !== 'SOUNDING' || t.calibration.every((c) => c.sounding !== undefined)).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                       </select>
                     </td>
                     <td className="num">
