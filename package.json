@@ -10,6 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

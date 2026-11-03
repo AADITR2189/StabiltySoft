@@ -64,7 +64,7 @@ The current Excel-based stability assessments cause:
 | Single colour theme (Powder Blue / White / Racing Orange), contrast-checked, installable, offline | ✅ Working |
 | Real vessel data | ⏳ Waiting for data: see the [Vessel Data Checklist](docs/DATA-CHECKLIST.md) |
 | Import (Excel / CSV / PDF / Word) with verification | ⏳ Next |
-| Reports (PDF / Excel) | ⏳ Next |
+| Reports (PDF / Excel) | ✅ Reports screen: PDF (summary, particulars, condition, weights, tanks, criteria, one page per stability group with GZ curve, GZ table and moment calculations, trace) and Excel workbook (same numbers, one GZ sheet per group, all load cases). Report ID = SHA-256 of inputs and results |
 | Hydrostatics / tanks editors, compare load cases, settings | ⏳ Planned |
 
 ### For developers: running it

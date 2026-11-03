@@ -5,16 +5,18 @@ import { EngineError } from './engine/math';
 import type { LoadCase, Results } from './engine/types';
 import { useLibrary, useLoadCases } from './store';
 import { CriteriaLibraryScreen } from './ui/CriteriaLibrary';
+import { ReportsScreen } from './ui/Reports';
 import { LoadCaseEditor } from './ui/LoadCaseEditor';
 import { Criteria, Dashboard, ResultsSidebar, VesselData } from './ui/Screens';
 
-type Screen = 'dashboard' | 'loadcase' | 'criteria' | 'library' | 'vessel';
+type Screen = 'dashboard' | 'loadcase' | 'criteria' | 'library' | 'vessel' | 'reports';
 const NAV: { id: Screen; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '▣' },
   { id: 'vessel', label: 'Vessel Database', icon: '⛴' },
   { id: 'loadcase', label: 'Load Case', icon: '☰' },
   { id: 'criteria', label: 'Stability Criteria', icon: '✓' },
   { id: 'library', label: 'Criteria Library', icon: '⚖' },
+  { id: 'reports', label: 'Reports', icon: '⎙' },
 ];
 
 export default function App() {
@@ -70,7 +72,7 @@ export default function App() {
             <span className="icon">{n.icon}</span>{n.label}
           </button>
         ))}
-        <div className="nav-note">Coming next:<br />Import · Reports · Hydrostatics editor · Tanks editor · Settings</div>
+        <div className="nav-note">Coming next:<br />Import · Hydrostatics editor · Tanks editor · Settings</div>
       </nav>
 
       <main className={`workspace ${showSidebar ? 'with-sidebar' : ''}`}>
@@ -83,6 +85,7 @@ export default function App() {
           {screen === 'loadcase' && <LoadCaseEditor vessel={vessel} lc={lc} r={r} onChange={store.update} customGroups={library.lib.groups} />}
           {screen === 'library' && <CriteriaLibraryScreen {...library} preview={r} lcName={lc.name} />}
           {screen === 'criteria' && (r ? <Criteria r={r} lc={lc} onChange={store.update} /> : <div className="error-box">{error}</div>)}
+          {screen === 'reports' && <ReportsScreen key={vessel.name} vessel={vessel} status={status} source={store.entry.source} cases={store.cases} activeId={lc.id} calc={calc} />}
           {screen === 'vessel' && <VesselData vessel={vessel} status={status} source={store.entry.source} />}
         </div>
         {showSidebar && <ResultsSidebar r={r} error={error} />}
