@@ -245,7 +245,7 @@ export function DataImportScreen(p: Props) {
           if (tables[0]) setTableId(tables[0].id);
         }} />}
         {doc?.tables.some((t) => t.ocr) && <p className="warn-text small">⚠ {doc.tables.filter((t) => t.ocr).length} page(s) were read by text recognition: digits can be misread (e.g. a lost decimal point), even when the recogniser is confident. Values it was unsure of are outlined; the checks catch most other errors; compare every row with the page image.</p>}
-        {doc && doc.tables.length === 0 && <div className="error-box">No readable text or tables found in this file.</div>}
+        {doc && doc.tables.length === 0 && !(doc.scannedPages?.length) && <div className="error-box">No readable text or tables found in this file.</div>}
       </section>
 
       {isMulti && doc && <MultiTankSection key={doc.sha256} doc={doc} vessel={vessel} target={target} save={p.saveUserVessel} />}

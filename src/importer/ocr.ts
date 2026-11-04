@@ -26,8 +26,15 @@ async function getWorker(onProgress: (t: string, f: number) => void): Promise<TW
       const base = new URL('ocr/', document.baseURI).href;
       const core = (await simd()) ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js';
       onProgress('Loading text recognition (first time: about 7 MB)…', 0);
-      const w = await T.createWorker('eng', 1, {
-        workerPath: `${base}worker.min.js`, corePath: `${base}${core}`, langPath: base.replace(/\/$/, ''), gzip: true, workerBlobURL: false,
+      // the English model is shipped as base64 text (gzip inside), handed to Tesseract as data
+      const resp = await fetch(`${base}eng.traineddata.gz.b64.txt`);
+      if (!resp.ok) throw new Error(`text recognition model not found (${resp.status})`);
+      const b64 = (await resp.text()).trim();
+      const bin = atob(b64);
+      const model = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) model[i] = bin.charCodeAt(i);
+      const w = await T.createWorker([{ code: 'eng', data: model }] as unknown as string[], 1, {
+        workerPath: `${base}worker.min.js`, corePath: `${base}${core}`, workerBlobURL: false,
         logger: (m: { status: string; progress: number }) => { if (/load|init/i.test(m.status)) onProgress(`Text recognition: ${m.status}`, m.progress * 0.05); },
       }) as unknown as TWorker;
       await w.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1', user_defined_dpi: '300' });
