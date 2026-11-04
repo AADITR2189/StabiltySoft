@@ -1,5 +1,6 @@
 import type { GroupDef, LoadCase, Results, TankInput, Vessel, WeightItem } from '../engine/types';
 import { Fragment, useState } from 'react';
+import { ArrivalPanel, exportLoadCase, OpLimitsPanel } from './LoadCaseTools';
 import { catLabel, groupByType, tankTypes, typeTotals } from '../engine/tankTypes';
 import { permissibleTensions, type TensionRow } from '../engine/permissibleTension';
 import { newId } from '../store';
@@ -20,9 +21,13 @@ interface Props {
   r: Results | null;
   onChange: (lc: LoadCase) => void;
   customGroups: GroupDef[];
+  /** add a new load case (arrival generator) */
+  onCreate?: (lc: LoadCase) => void;
 }
 
-export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props) {
+export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups, onCreate }: Props) {
+  const [arrival, setArrival] = useState(false);
+  const [fileMsg, setFileMsg] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const set = (patch: Partial<LoadCase>) => onChange({ ...lc, ...patch });
 
@@ -62,8 +67,16 @@ export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props)
 
   return (
     <div className="stack">
+      {arrival && onCreate && <ArrivalPanel vessel={vessel} lc={lc} r={r} onCreate={onCreate} onClose={() => setArrival(false)} />}
       <section className="panel">
-        <div className="panel-head"><h2>Load case</h2></div>
+        <div className="panel-head"><h2>Load case</h2>
+          <span className="form-row" style={{ gap: 8 }}>
+            {onCreate && <button className="ghost" onClick={() => setArrival(!arrival)}>Generate arrival condition…</button>}
+            <button className="ghost" onClick={async () => setFileMsg(await exportLoadCase(vessel, lc))}>⬇ Export load case file</button>
+          </span>
+        </div>
+        {fileMsg && <p className="muted small" role="status">{fileMsg}</p>}
+        {lc.generatedFrom && <p className="muted small">↳ {lc.generatedFrom.note}</p>}
         <div className="form-row">
           <label>Name<input value={lc.name} onChange={(e) => set({ name: e.target.value })} /></label>
           <label>Type
@@ -108,6 +121,8 @@ export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props)
       </section>
 
       <OperationPanel lc={lc} vessel={vessel} set={set} />
+
+      <OpLimitsPanel vessel={vessel} lc={lc} r={r} onChange={onChange} />
 
       <section className="panel">
         <div className="panel-head"><h2>Tanks</h2>

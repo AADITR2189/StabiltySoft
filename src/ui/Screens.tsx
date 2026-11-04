@@ -1,5 +1,10 @@
 import type { CriteriaGroupResult, CriterionResult, LoadCase, Results, Vessel } from '../engine/types';
-import { Fragment } from 'react';
+import { Fragment, useRef, useState } from 'react';
+import { GzRangeControl, OpLimitsSummary } from './LoadCaseTools';
+import { fileSafe, gzCsv, savePng, saveSvg } from './chartExport';
+import { saveFile, type SaveOutcome } from '../report/save';
+import { readLoadCaseFile } from '../importer/loadCaseFile';
+import { newId } from '../store';
 import { catLabel, groupByType, tankTypes } from '../engine/tankTypes';
 import { f, unitFmt } from './format';
 import { GzChart } from './GzChart';
@@ -39,6 +44,12 @@ export function ResultsSidebar({ r, error }: { r: Results | null; error: string 
         ))}
         {r.groups.length === 0 && <li className="fail-text">No stability group selected</li>}
       </ul>
+      {r.opLimits.some((x) => x.enabled) && (
+        <div className="overall">
+          <span>Operational limits</span>
+          {r.limitsOk ? <span className="badge pass">✓ MET</span> : <span className="badge fail">✗ {r.opLimits.filter((x) => x.enabled && !x.passed).length} EXCEEDED</span>}
+        </div>
+      )}
       {r.warnings.length > 0 && (
         <ul className="warnings">{r.warnings.map((w, i) => <li key={i}>⚠ {w.message}</li>)}</ul>
       )}
@@ -46,11 +57,19 @@ export function ResultsSidebar({ r, error }: { r: Results | null; error: string 
   );
 }
 
-export function Dashboard({ vessel, status, source, cases, activeId, calc, onOpen, onDuplicate, onCreate, onRemove }: {
+export function Dashboard({ vessel, status, source, cases, activeId, calc, onOpen, onDuplicate, onCreate, onRemove, onAdd }: {
   vessel: Vessel; status: string; source: string; cases: LoadCase[]; activeId: string;
   calc: (lc: LoadCase) => { r: Results | null; error: string | null };
   onOpen: (id: string) => void; onDuplicate: (id: string) => void; onCreate: () => void; onRemove: (id: string) => void;
+  onAdd?: (lc: LoadCase) => void;
 }) {
+  const [imp, setImp] = useState<{ lc: LoadCase; errors: string[]; warnings: string[] } | null>(null);
+  const [impMsg, setImpMsg] = useState<string | null>(null);
+  const readFile = async (file: File | undefined) => {
+    if (!file) return;
+    setImp(null); setImpMsg(null);
+    try { setImp(await readLoadCaseFile(await file.text(), vessel, newId)); } catch (e) { setImpMsg(e instanceof Error ? e.message : String(e)); }
+  };
   const rows = cases.map((c) => ({ c, ...calc(c) }));
   const groupIds = Array.from(new Set(rows.flatMap((x) => x.r?.groups.map((g) => g.id) ?? [])));
   const groupName = (id: string) => rows.flatMap((x) => x.r?.groups ?? []).find((g) => g.id === id)?.name ?? id;
@@ -77,7 +96,25 @@ export function Dashboard({ vessel, status, source, cases, activeId, calc, onOpe
         <p className="muted small">Source: {source}</p>
       </section>
       <section className="panel">
-        <div className="panel-head"><h2>Load cases summary ({cases.length})</h2><button onClick={onCreate}>+ Add load case</button></div>
+        <div className="panel-head"><h2>Load cases summary ({cases.length})</h2>
+          <span className="form-row" style={{ gap: 8 }}>
+            {onAdd && <label className="ghost-file"><span className="file-btn">⬆ Import load case file</span><input type="file" accept=".json,application/json" aria-label="Import load case file" onChange={(e) => { readFile(e.target.files?.[0]); e.target.value = ''; }} /></label>}
+            <button onClick={onCreate}>+ Add load case</button>
+          </span>
+        </div>
+        {impMsg && <div className="error-box" role="status">{impMsg}</div>}
+        {imp && (
+          <div className="notice" style={{ marginBottom: 10 }}>
+            <b>Load case file: “{imp.lc.name}”</b> ({imp.lc.type}) · {Object.values(imp.lc.tanks).filter((t) => t.input.mode === 'FILLED' || t.input.value > 0).length} tanks with contents · {imp.lc.weights.length} weight items
+            {imp.errors.map((x) => <p key={x} className="fail-text small">✗ {x}</p>)}
+            {imp.warnings.map((x) => <p key={x} className="warn-text small">! {x}</p>)}
+            {(() => { const c = calc(imp.lc); return c.r ? <p className="small">Calculated in {vessel.name}: Δ {f(c.r.displacement, 1)} t, GM {f(c.r.gmFluid, 3)} m, criteria {c.r.overallPass ? 'PASS' : 'FAIL'}</p> : <p className="fail-text small">Cannot calculate: {c.error}</p>; })()}
+            <div className="form-row">
+              <button disabled={imp.errors.length > 0} onClick={() => { onAdd!(imp.lc); setImpMsg(null); setImp(null); }}>Add as new load case</button>
+              <button className="ghost" onClick={() => setImp(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
         <div className="table-wrap">
           <table className="grid summary">
             <thead>
@@ -137,6 +174,8 @@ export function Criteria({ r, lc, onChange }: { r: Results; lc: LoadCase; onChan
         ))}
         {r.groups.length === 0 && <span className="fail-text">No stability group is selected for this load case. Select groups in the Load Case screen.</span>}
       </section>
+      <OpLimitsSummary r={r} />
+      <section className="panel"><GzRangeControl key={lc.id} lc={lc} onChange={onChange} /></section>
       {r.groups.map((g) => <GroupSection key={g.id} g={g} r={r} lc={lc} onChange={onChange} />)}
       {r.warnings.length > 0 && (
         <section className="panel">
@@ -150,6 +189,21 @@ export function Criteria({ r, lc, onChange }: { r: Results; lc: LoadCase; onChan
 
 function GroupSection({ g, r, lc, onChange }: { g: CriteriaGroupResult; r: Results; lc: LoadCase; onChange: (lc: LoadCase) => void }) {
   const w = r.weather;
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [exp, setExp] = useState<string | null>(null);
+  const base = fileSafe(`${lc.name}_${g.name}`);
+  const run = async (kind: 'png' | 'svg' | 'csv') => {
+    try {
+      let out: SaveOutcome;
+      if (kind === 'csv') out = await saveFile(`${base}_GZ_table.csv`, new Blob([gzCsv(g, [`# ${g.name} · ${lc.name}`, `# heel to ${r.side < 0 ? 'port' : 'starboard'}; LCG from AP; not an approved stability instrument`])], { type: 'text/csv' }));
+      else {
+        const svg = chartRef.current?.querySelector('svg');
+        if (!svg) return;
+        out = kind === 'png' ? await savePng(svg, `${base}_GZ`) : await saveSvg(svg, `${base}_GZ`);
+      }
+      setExp(out === 'saved' ? `${kind.toUpperCase()} saved.` : out === 'declined' ? 'Save cancelled.' : 'Saving files is not available here.');
+    } catch (e) { setExp(`Export failed: ${e instanceof Error ? e.message : e}`); }
+  };
   return (
     <section className={`panel group ${g.passed ? 'g-pass' : 'g-fail'}`} id={`group-${g.id}`}>
       <div className="panel-head">
@@ -173,7 +227,14 @@ function GroupSection({ g, r, lc, onChange }: { g: CriteriaGroupResult; r: Resul
             {g.chart === 'CRANE' && <><i className="l-wind" />Wind lever during lift <i className="l-2" />Residual area to 20° <i className="l-b" />ARL (to φ2) <i className="l-ref" />φ1, φ2, deck edge</>}
             <i className="l-flood" />Flooding angle
           </div>
-          <GzChart r={r} mode={g.chart === 'GENERAL' ? 'general' : g.chart === 'WEATHER' ? 'weather' : g.chart === 'FIFI' ? 'fifi' : 'crane'} criteria={g.criteria} />
+          <div ref={chartRef}><GzChart r={r} mode={g.chart === 'GENERAL' ? 'general' : g.chart === 'WEATHER' ? 'weather' : g.chart === 'FIFI' ? 'fifi' : 'crane'} criteria={g.criteria} /></div>
+          <div className="form-row export-row">
+            <span className="muted small">Export:</span>
+            <button className="ghost tiny" onClick={() => run('png')}>⬇ Chart PNG</button>
+            <button className="ghost tiny" onClick={() => run('svg')}>⬇ Chart SVG</button>
+            <button className="ghost tiny" onClick={() => run('csv')}>⬇ GZ table CSV</button>
+            {exp && <span className="muted small" role="status">{exp}</span>}
+          </div>
         </>
       )}
       <div className="table-wrap">

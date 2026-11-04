@@ -104,9 +104,9 @@ export default function App() {
           {screen === 'dashboard' && (
             <Dashboard vessel={vessel} status={status} source={store.entry.source} cases={store.cases} activeId={lc.id} calc={calc}
               onOpen={(id) => { store.setActive(id); setScreen('loadcase'); }}
-              onDuplicate={store.duplicate} onCreate={store.create} onRemove={store.remove} />
+              onDuplicate={store.duplicate} onCreate={store.create} onRemove={store.remove} onAdd={store.add} />
           )}
-          {screen === 'loadcase' && <LoadCaseEditor vessel={vessel} lc={lc} r={r} onChange={store.update} customGroups={library.lib.groups} />}
+          {screen === 'loadcase' && <LoadCaseEditor vessel={vessel} lc={lc} r={r} onChange={store.update} customGroups={library.lib.groups} onCreate={store.add} />}
           {screen === 'library' && <CriteriaLibraryScreen {...library} preview={r} lcName={lc.name} />}
           {screen === 'criteria' && (r ? <Criteria r={r} lc={lc} onChange={store.update} /> : <div className="error-box">{error}</div>)}
           {screen === 'reports' && <ReportsScreen key={vessel.name} vessel={vessel} status={status} source={store.entry.source} cases={store.cases} activeId={lc.id} calc={calc} />}

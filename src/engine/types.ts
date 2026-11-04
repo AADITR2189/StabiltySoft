@@ -158,6 +158,12 @@ export interface LoadCase {
   tanks: Record<string, TankStatus>;
   weights: WeightItem[];
   gzMaxAngle?: number; // default 90
+  /** Angles shown in the GZ tables and chart (criteria always use the full curve). */
+  gzRange?: import('./opLimits').GzRange;
+  /** Operational limits, each with its own tick (unticked = not checked). */
+  opLimits?: import('./opLimits').OpLimits;
+  /** Set when the load case was generated from another one (e.g. arrival from departure). */
+  generatedFrom?: { id: string; name: string; note: string };
   /** Operation data needed by some stability groups. */
   ops?: OperationData;
   /** Stability criteria groups applied to this load case (ids). Undefined = all built-in groups. */
@@ -415,6 +421,10 @@ export interface Results {
   fifi: FifiDetail | null;
   crane: CraneDetail | null;
   warnings: Warning[];
+  /** Operational limits (separate from the criteria; do not change overallPass). */
+  opLimits: import('./opLimits').OpLimitResult[];
+  /** True when every ticked operational limit is met. */
+  limitsOk: boolean;
   overallPass: boolean;
   /** Signed GZ function of this condition (heel + to starboard). Not serialised. */
   gzAt?: (deg: number) => number;

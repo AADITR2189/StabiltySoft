@@ -105,6 +105,17 @@ export async function buildXlsx(input: ReportInput): Promise<Blob> {
   }
   c.views = [{ state: 'frozen', ySplit: 5 }];
 
+  // ---------- operational limits ----------
+  const ol = wb.addWorksheet(sheetName('Operational limits'));
+  ol.columns = [{ width: 34 }, { width: 8 }, { width: 12 }, { width: 12 }, { width: 8 }, { width: 12 }, { width: 60 }];
+  title(ol, 'Operational limits (separate from the stability criteria)');
+  header(ol, ['Limit', 'In use', 'Required', 'Actual', 'Unit', 'Status', 'Note']);
+  for (const x of r.opLimits) {
+    const row = ol.addRow([x.label, x.enabled ? 'yes' : 'no', x.limit, x.actual, x.unit, x.enabled ? (x.passed ? 'PASS' : 'FAIL') : 'not used', x.note ?? '']);
+    if (x.enabled) row.getCell(6).font = { bold: true, color: { argb: x.passed ? 'FF15803D' : 'FFC81E46' } };
+  }
+  numFmt(ol, [3, 4], '0.000');
+
   // ---------- one GZ sheet per group ----------
   for (const g of r.groups) {
     if (g.error) continue;

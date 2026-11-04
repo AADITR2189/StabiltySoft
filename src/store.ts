@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { VESSELS, type VesselEntry } from './data/vessels';
 import type { UserVesselEntry } from './importer/dbFile';
+import { defaultLimits } from './engine/opLimits';
 import type { CriteriaLibrary, CriterionDef, GroupDef, LoadCase, MomentDef, Vessel } from './engine/types';
 
 const KEY = 'stabilitysoft.loadcases.v3';
@@ -110,6 +111,8 @@ export function useLoadCases(entries: VesselEntry[] = VESSELS) {
       setCases((cs) => [...cs, lc2]);
       setActiveState({ vesselId: entry.id, caseId: lc2.id });
     },
+    /** add a ready-made load case (arrival generator, imported file) and open it */
+    add: (x: LoadCase) => { setCases((cs) => [...cs, x]); setActiveState({ vesselId: entry.id, caseId: x.id }); },
     remove: (id: string) => setCases((cs) => (cs.length > 1 ? cs.filter((c) => c.id !== id) : cs)),
     resetToBooklet: () => setCases(() => structuredClone(entry.defaultLoadCases)),
   };
@@ -126,6 +129,7 @@ export function emptyLoadCase(vessel: Vessel, n: number): LoadCase {
     tanks: Object.fromEntries(vessel.tanks.map((t) => [t.id, { input: { mode: 'PERCENT' as const, value: 0 } }])),
     weights: [],
     criteriaGroups: vessel.criteriaGroups,
+    opLimits: defaultLimits(vessel),
   };
 }
 

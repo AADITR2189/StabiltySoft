@@ -3,6 +3,7 @@ import {
   DEG, EngineError, assertIncreasing, firstCrossing, integrateDeg, kahanSum, lerp, pchip, tableFactor,
 } from './math';
 import { resolveTank } from './tanks';
+import { checkLimits, rangeAngles } from './opLimits';
 import type {
   CraneDetail, CriteriaGroupResult, CriteriaLibrary, CriterionDef, CriterionResult, FifiDetail, GzPoint, LoadCase,
   Results, TankResult, Vessel, Warning, WeatherDetail,
@@ -72,7 +73,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
   const cb = hs.cb ?? (disp / lc.seaDensity) / (L * vessel.breadth * draftMean);
   const lwl = hs.lwl ?? L;
   // Load line draft is measured at midship; 5 mm tolerance for table rounding.
-  if (vessel.maxDraft !== undefined && draftMS > vessel.maxDraft + 0.005) {
+  if (vessel.maxDraft !== undefined && draftMS > vessel.maxDraft + 0.005 && lc.opLimits?.maxDraftMS?.enabled !== false) {
     warnings.push({ code: 'MAX_DRAFT_EXCEEDED', message: `Draft at midship ${draftMS.toFixed(3)} m exceeds the load line draft of ${vessel.maxDraft.toFixed(3)} m.` });
   }
 
@@ -111,8 +112,8 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
   const tcgS = side * tcg;
   const gzS = (deg: number) => side * gz(side * deg);
 
-  const gzTable: GzPoint[] = kn.angles
-    .filter((a) => a <= gzEnd)
+  if (lc.gzRange && lc.gzRange.to > maxTableAngle + 1e-9) warnings.push({ code: 'GZ_RANGE_CLIPPED', message: `GZ table range limited to ${maxTableAngle}°, the largest angle of the KN table.` });
+  const gzTable: GzPoint[] = rangeAngles(lc.gzRange, Math.min(gzEnd, maxTableAngle), () => kn.angles.filter((a) => a <= gzEnd))
     .map((a) => {
       const k = knOf(a);
       const kgSin = kgFluid * Math.sin(a * DEG);
@@ -120,7 +121,11 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
       return { heel: a, kn: k, kgSin, tcgCos, gz: k - kgSin - tcgCos };
     });
   const gzCurve: { heel: number; gz: number }[] = [];
-  for (let a = 0; a <= gzEnd + 1e-9; a += 1) gzCurve.push({ heel: a, gz: gzS(a) });
+  const cFrom = 0; // the chart always starts upright so the criterion areas are drawn complete
+  const cTo = lc.gzRange ? Math.min(Math.max(lc.gzRange.to, cFrom), gzEnd) : gzEnd;
+  const cStep = lc.gzRange ? Math.min(1, Math.max(0.1, lc.gzRange.step)) : 1;
+  for (let a = cFrom; a <= cTo + 1e-9; a += cStep) gzCurve.push({ heel: Math.round(a * 1e6) / 1e6, gz: gzS(a) });
+  if (gzCurve.length && gzCurve[gzCurve.length - 1].heel < cTo - 1e-9) gzCurve.push({ heel: cTo, gz: gzS(cTo) });
 
   // GZmax, angle of max, AVS (on the side of heel)
   let gzMax = -Infinity;
@@ -260,9 +265,11 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     return combinedMoment(currentGroupMomentIds, `GROUP:${currentGroupKey}`);
   }
   function tableAngles(): number[] {
-    const set = new Set<number>(kn.angles.filter((a) => a <= gzEnd));
-    for (let a = 0; a <= gzEnd + 1e-9; a += 5) set.add(a);
-    return [...set].sort((a, b) => a - b);
+    return rangeAngles(lc.gzRange, gzEnd, () => {
+      const set = new Set<number>(kn.angles.filter((a) => a <= gzEnd));
+      for (let a = 0; a <= gzEnd + 1e-9; a += 5) set.add(a);
+      return [...set].sort((a, b) => a - b);
+    });
   }
   const equilibriumUnder = (arm: (d: number) => number, name: string) => {
     const eq = firstCrossing((x) => gzS(x) - arm(x), 0, 0, gzEnd, 0.05);
@@ -934,6 +941,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
   const appliedCriteria = groups.flatMap((g) => g.criteria).filter((c) => (seen.has(c.code) ? false : (seen.add(c.code), true)));
   const overallPass = groups.length > 0 && groups.every((g) => g.passed) && !warnings.some((w) => w.code === 'NEGATIVE_INITIAL_GM');
 
+  const opl = checkLimits(lc, vessel, { draftAP, draftFP, draftMS, trim, heel, gmFluid });
   const result: Results = {
     displacement: disp,
     deadweight: disp - vessel.lightship.weight,
@@ -943,6 +951,7 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     floodAngle, floodOpening, deckEdgeAngle,
     gzMax, gzMaxAngle, avs,
     gzTable, gzCurve, tanks, summary, criteria: appliedCriteria, groups, weather, fifi, crane, warnings, overallPass,
+    opLimits: opl, limitsOk: opl.every((x) => !x.enabled || x.passed),
   };
   Object.defineProperty(result, 'gzAt', { value: gz, enumerable: false });
   return result;

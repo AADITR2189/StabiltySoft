@@ -352,3 +352,7 @@ button.tiny { font-size: 12px; padding: 1px 8px; margin: 2px 4px 2px 0; }
 .types-tank { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; padding: 2px 0; }
 .types-tank .warn-text { grid-column: 2 / 4; font-size: 11px; }
 .types-tank select { max-width: 140px; font-size: 12px; }
+.grid.limits tr.limit-off td { color: var(--muted); }
+.grid.limits tr.limit-off input[type=number] { opacity: 0.6; }
+.export-row { gap: 8px; align-items: center; margin-top: 4px; }
+.gz-range label { font-size: 12px; }

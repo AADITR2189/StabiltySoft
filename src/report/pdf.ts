@@ -104,6 +104,11 @@ export async function buildPdf(input: ReportInput): Promise<Blob> {
   heading('5  Stability criteria summary');
   table(['Stability group', 'Regulation', 'Criteria', 'Result'], r.groups.map((g) => [g.name, g.regulation, `${g.criteria.filter((c) => c.passed).length} / ${g.criteria.length}`, g.error ? 'NOT EVALUATED' : g.passed ? 'PASS' : 'FAIL']),
     { didParseCell: statusColour(3) });
+  const used = r.opLimits.filter((x) => x.enabled);
+  heading('Operational limits (separate from the stability criteria)', 10);
+  if (used.length) table(['Limit', 'Required', 'Actual', 'Status'], used.map((x) => [x.label + (x.note ? ` (${x.note})` : ''), `${x.comparator === '<=' ? '≤' : '≥'} ${n(x.limit, x.unit === '°' ? 2 : 3)} ${x.unit}`, `${n(x.actual, x.unit === '°' ? 2 : 3)} ${x.unit}`, x.passed ? 'PASS' : 'FAIL']),
+    { columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }, didParseCell: statusColour(3) });
+  else para('No operational limit in use for this load case.', 7.5, MUTED);
 
   // ---------- one section per group ----------
   r.groups.forEach((g, gi) => {
