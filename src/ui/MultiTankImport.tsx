@@ -10,6 +10,7 @@ import { applyToVessel, compareRows, expectedRows, storedRows, type Provenance }
 import { buildTankImports, DEFAULT_TITLE, parseTitle, splitTanks, tankChecks, type SplitMethod, type TankImport } from '../importer/multiTank';
 import type { Check } from '../importer/checks';
 import { ReviewTable, SourceGrid } from './ImportTables';
+import { tankTypes } from '../engine/tankTypes';
 import { PdfPage } from './PdfPage';
 
 const GROUPS: TankGroup[] = ['BALLAST', 'FUEL_OIL', 'DIESEL_OIL', 'LUB_OIL', 'FRESH_WATER', 'MISC'];
@@ -72,7 +73,7 @@ export function MultiTankSection({ doc, vessel, target, save }: Props) {
     const prov: Record<string, Provenance> = { ...target.provenance };
     let rows = 0, values = 0;
     for (const t of inc) {
-      const o = { trim: 0, tank: { name: t.name.trim(), group: t.group, density: t.density as number, isConsumable: t.consumable } };
+      const o = { trim: 0, tank: { name: t.name.trim(), group: t.group, density: t.density as number, isConsumable: t.consumable, type: t.type.trim().toUpperCase() || undefined } };
       try { v = applyToVessel('TANK', v, t.conv, o); } catch (e) { setResult({ ok: false, text: `${t.name}: ${e instanceof Error ? e.message : e}. Nothing was stored.` }); return; }
       const exp = expectedRows('TANK', t.conv, o);
       const cmp = compareRows(exp, storedRows('TANK', v, o), false);
@@ -152,9 +153,11 @@ export function MultiTankSection({ doc, vessel, target, save }: Props) {
             <span className="muted small">{inc.length} of {imports.length} included · {inc.length - withErr.length - withWarn.filter((t) => !withErr.includes(t)).length} clean · {withWarn.filter((t) => !withErr.includes(t)).length} with warnings · {withErr.length} with errors · {inc.length - notReviewed.length} compared</span></div>
           {missingInVessel.length > 0 && <p className="warn-text small">! Tanks of {vessel.name} not in this import (kept as they are): {missingInVessel.join(', ')}</p>}
           <p className="muted small">Open a tank to see every value next to its source text{doc.kind === 'PDF' ? ' and the page image' : ''}; tick "compared" when it agrees with the source. Name, group, density and consumable can be corrected here.</p>
+          <datalist id="mt-types">{[...new Set([...tankTypes(vessel).map((x) => x.name), ...imports.map((x) => x.type)])].map((n) => <option key={n} value={n} />)}</datalist>
+          <p className="muted small">Types in this import: {[...new Set(inc.map((t) => t.type))].map((ty) => `${ty} (${inc.filter((t) => t.type === ty).length})`).join(' · ')}</p>
           <div className="table-wrap tall">
             <table className="grid tank-list">
-              <thead><tr><th>Include</th><th>Tank</th><th>Source</th><th>Group</th><th className="num">Density t/m³</th><th>Cons.</th><th className="num">Rows</th><th className="num">Capacity m³</th><th>In vessel</th><th>Checks</th><th>Compared</th><th /></tr></thead>
+              <thead><tr><th>Include</th><th>Tank</th><th>Source</th><th>Type</th><th>Category</th><th className="num">Density t/m³</th><th>Cons.</th><th className="num">Rows</th><th className="num">Capacity m³</th><th>In vessel</th><th>Checks</th><th>Compared</th><th /></tr></thead>
               <tbody>
                 {imports.map((t) => {
                   const cs = checks.get(t.key)!;
@@ -166,6 +169,7 @@ export function MultiTankSection({ doc, vessel, target, save }: Props) {
                       <td><input type="checkbox" checked={t.include} aria-label={`Include ${t.name}`} onChange={(ev) => upd(t.key, { include: ev.target.checked, reviewed: t.reviewed })} /></td>
                       <td><input type="text" value={t.name} onChange={(ev) => upd(t.key, { name: ev.target.value })} aria-label="Tank name" /></td>
                       <td className="small muted">{where(t)}</td>
+                      <td><input type="text" list="mt-types" value={t.type} onChange={(ev) => { const ty = ev.target.value.toUpperCase(); const k = tankTypes(vessel).find((x) => x.name === ty); upd(t.key, { type: ty, ...(k ? { group: k.category } : {}) }); }} aria-label={`${t.name} type`} /></td>
                       <td><select value={t.group} onChange={(ev) => upd(t.key, { group: ev.target.value as TankGroup })}>{GROUPS.map((g) => <option key={g} value={g}>{g.replace('_', ' ').toLowerCase()}</option>)}</select></td>
                       <td className="num"><input type="number" step="any" value={t.density} onChange={(ev) => upd(t.key, { density: ev.target.value === '' ? '' : Number(ev.target.value) })} aria-label={`${t.name} density`} /></td>
                       <td><input type="checkbox" checked={t.consumable} onChange={(ev) => upd(t.key, { consumable: ev.target.checked })} aria-label={`${t.name} consumable`} /></td>

@@ -38,7 +38,7 @@ export function vesselFromBooklet(x: BookletExtract): Vessel {
       inertia: (r.fsm ?? (i === t.rows.length - 1 ? (t.rows[i - 1].fsm ?? maxFsm) : 0)) / t.density,
     }));
     return {
-      id: t.name, name: t.name, group: GROUPS[t.group] ?? 'MISC', capacity: t.rows[t.rows.length - 1].volume,
+      id: t.name, name: t.name, type: t.group, group: GROUPS[t.group] ?? 'MISC', capacity: t.rows[t.rows.length - 1].volume,
       density: t.density, isConsumable: ['FUEL_OIL', 'FRESH_WATER'].includes(GROUPS[t.group] ?? ''), calibration,
     };
   });

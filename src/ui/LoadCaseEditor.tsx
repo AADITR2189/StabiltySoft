@@ -1,5 +1,6 @@
 import type { GroupDef, LoadCase, Results, TankInput, Vessel, WeightItem } from '../engine/types';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
+import { CATEGORY_LABEL, groupByType, tankTypes, typeTotals } from '../engine/tankTypes';
 import { permissibleTensions, type TensionRow } from '../engine/permissibleTension';
 import { newId } from '../store';
 import { BUILTIN_GROUPS, DEFAULT_GROUP_IDS } from '../engine/criteriaGroups';
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const set = (patch: Partial<LoadCase>) => onChange({ ...lc, ...patch });
 
   const setTankMode = (tankId: string, mode: TankInput['mode']) => {
@@ -108,7 +110,13 @@ export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props)
       <OperationPanel lc={lc} vessel={vessel} set={set} />
 
       <section className="panel">
-        <div className="panel-head"><h2>Tanks</h2><span className="muted">Choose how you enter each tank. The rest is calculated.</span></div>
+        <div className="panel-head"><h2>Tanks</h2>
+          <span className="form-row" style={{ gap: 8, alignItems: 'center' }}>
+            <span className="muted">Choose how you enter each tank. The rest is calculated.</span>
+            <button className="ghost tiny" onClick={() => setCollapsed(new Set(tankTypes(vessel).map((t) => t.name)))}>Collapse all</button>
+            <button className="ghost tiny" onClick={() => setCollapsed(new Set())}>Expand all</button>
+          </span>
+        </div>
         <div className="table-wrap">
           <table className="grid">
             <thead>
@@ -119,13 +127,28 @@ export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props)
               </tr>
             </thead>
             <tbody>
-              {vessel.tanks.map((t) => {
+              {groupByType(vessel, vessel.tanks, (t) => t).map((g) => {
+                const rs = g.items.map((t) => r?.tanks.find((x) => x.tankId === t.id)).filter((x): x is NonNullable<typeof x> => !!x);
+                const tot = typeTotals(rs);
+                const closed = collapsed.has(g.type.name);
+                const cap = g.items.reduce((s2, t) => s2 + t.capacity, 0);
+                return (
+                  <Fragment key={g.type.name}>
+                    <tr className="type-head" style={{ ['--type-color' as string]: g.type.color }}>
+                      <td colSpan={10}>
+                        <button className="link" onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(g.type.name)) n.delete(g.type.name); else n.add(g.type.name); return n; })} aria-expanded={!closed}>
+                          {closed ? '▸' : '▾'} <span className="dot" style={{ background: g.type.color }} />{g.type.name}
+                        </button>
+                        <span className="muted small"> · {g.items.length} tank{g.items.length > 1 ? 's' : ''} · {CATEGORY_LABEL[g.type.category].toLowerCase()}{g.type.consumable ? ' · consumable' : ''}{closed && r ? ` · ${f(tot.weight, 1)} t, ${f(cap > 0 ? (tot.volume / cap) * 100 : 0, 0)} % full` : ''}</span>
+                      </td>
+                    </tr>
+                    {!closed && g.items.map((t) => {
                 const st = lc.tanks[t.id]?.input ?? { mode: 'VOLUME' as const, value: 0 };
                 const tr = r?.tanks.find((x) => x.tankId === t.id);
                 const unit = MODES.find((m) => m.value === st.mode)!.unit;
                 return (
                   <tr key={t.id}>
-                    <td><span className={`dot g-${t.group}`} />{t.name}</td>
+                    <td className="tank-name">{t.name}</td>
                     <td>
                       <select value={st.mode} onChange={(e) => setTankMode(t.id, e.target.value as TankInput['mode'])}>
                         {MODES.filter((m) => m.value !== 'SOUNDING' || t.calibration.every((c) => c.sounding !== undefined)).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -153,6 +176,16 @@ export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props)
                     <td className="num">{f(tr?.vcg, 2)}</td>
                     <td className="num">{f(tr?.fsm, 0)}</td>
                   </tr>
+                );
+})}
+                    {!closed && r && (
+                      <tr className="type-total">
+                        <td colSpan={4}>Subtotal {g.type.name}</td>
+                        <td className="num">{f(cap > 0 ? (tot.volume / cap) * 100 : 0, 1)}</td><td className="num">{f(tot.volume, 1)}</td><td className="num">{f(tot.weight, 1)}</td>
+                        <td className="num">{tot.weight > 0 ? f(tot.lcg, 2) : '—'}</td><td className="num">{tot.weight > 0 ? f(tot.vcg, 2) : '—'}</td><td className="num">{f(tot.fsm, 0)}</td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>

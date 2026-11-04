@@ -1,4 +1,6 @@
 import type { CriteriaGroupResult, CriterionResult, LoadCase, Results, Vessel } from '../engine/types';
+import { Fragment } from 'react';
+import { CATEGORY_LABEL, groupByType, tankTypes } from '../engine/tankTypes';
 import { f, unitFmt } from './format';
 import { GzChart } from './GzChart';
 import { ConfirmDelete } from './CriteriaLibrary';
@@ -327,11 +329,21 @@ export function VesselData({ vessel, status, source }: { vessel: Vessel; status:
         </div>
       </section>
       <section className="panel">
-        <div className="panel-head"><h2>Tanks</h2></div>
-        <table className="grid">
-          <thead><tr><th>Tank</th><th>Group</th><th className="num">Capacity m³</th><th className="num">Density</th><th>Consumable</th><th className="num">Calibration rows</th></tr></thead>
-          <tbody>{vessel.tanks.map((t) => <tr key={t.id}><td><span className={`dot g-${t.group}`} />{t.name}</td><td>{t.group.replace('_', ' ')}</td><td className="num">{f(t.capacity, 1)}</td><td className="num">{f(t.density, 3)}</td><td>{t.isConsumable ? 'Yes' : 'No'}</td><td className="num">{t.calibration.length}</td></tr>)}</tbody>
-        </table>
+        <div className="panel-head"><h2>Tanks by type</h2><span className="muted small">{vessel.tanks.length} tanks · {tankTypes(vessel).length} types</span></div>
+        <div className="table-wrap">
+          <table className="grid">
+            <thead><tr><th>Tank</th><th>Category</th><th className="num">Capacity m³</th><th className="num">Density t/m³</th><th>Consumable</th><th className="num">Calibration rows</th></tr></thead>
+            <tbody>
+              {groupByType(vessel, vessel.tanks, (t) => t).map((g) => (
+                <Fragment key={g.type.name}>
+                  <tr className="type-head" style={{ ['--type-color' as string]: g.type.color }}><td colSpan={6}><span className="dot" style={{ background: g.type.color }} /><b>{g.type.name}</b><span className="muted small"> · {g.items.length} tank{g.items.length > 1 ? 's' : ''}{g.type.density !== undefined ? ` · default ρ ${g.type.density}` : ''}</span></td></tr>
+                  {g.items.map((t) => <tr key={t.id}><td className="tank-name">{t.name}</td><td>{CATEGORY_LABEL[t.group]}</td><td className="num">{f(t.capacity, 1)}</td><td className="num">{f(t.density, 3)}</td><td>{t.isConsumable ? 'Yes' : 'No'}</td><td className="num">{t.calibration.length}</td></tr>)}
+                  <tr className="type-total"><td colSpan={2}>Subtotal {g.type.name}</td><td className="num">{f(g.items.reduce((s2, t) => s2 + t.capacity, 0), 1)}</td><td colSpan={3} /></tr>
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

@@ -5,6 +5,7 @@ import type { TankGroup, Vessel } from '../engine/types';
 import { datasetDef } from './datasets';
 import { convert, numVal, type Conversion, type Mapping } from './convert';
 import { checkConversion, type Check } from './checks';
+import { CATEGORY_LABEL, categoryOf, tankTypes } from '../engine/tankTypes';
 import { parseNum } from './numbers';
 import type { SourceTable } from './sources';
 
@@ -153,6 +154,8 @@ export interface TankImport {
   include: boolean;
   reviewed: boolean;
   name: string;
+  /** tank type as named in the source ("WATER BALLAST", "BRINE" …) */
+  type: string;
   group: TankGroup;
   density: number | '';
   consumable: boolean;
@@ -176,9 +179,11 @@ export function buildTankImports(blocks: TankBlock[], m: Mapping, v: Vessel, fil
     let filled = 0;
     if (fillGaps) ({ conv, filled } = fillTankGaps(conv));
     const existing = v.tanks.find((t) => t.name === b.name);
-    const group = existing?.group ?? guessGroup(b.name, b.groupText);
+    const typeName = (b.groupText || existing?.type || '').trim().toUpperCase();
+    const known = typeName ? tankTypes(v).find((x) => x.name === typeName) : undefined;
+    const group = known?.category ?? existing?.group ?? (typeName ? (categoryOf(typeName) !== 'MISC' ? categoryOf(typeName) : guessGroup(b.name, b.groupText)) : guessGroup(b.name, b.groupText));
     return {
-      key: `${i}:${b.name}`, include: true, reviewed: false, name: b.name, group,
+      key: `${i}:${b.name}`, include: true, reviewed: false, name: b.name, type: typeName || CATEGORY_LABEL[group].toUpperCase(), group,
       density: b.density ?? existing?.density ?? '', consumable: existing?.isConsumable ?? CONSUMABLE.includes(group),
       block: b, refs: r.refs, rows: r.rows, dropped: r.dropped, trailing: r.trailing, conv, filled,
     };

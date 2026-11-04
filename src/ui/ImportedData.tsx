@@ -5,8 +5,10 @@ import type { Vessel } from '../engine/types';
 import type { VesselEntry } from '../data/vessels';
 import type { UserVesselEntry } from '../importer/dbFile';
 import type { Provenance } from '../importer/apply';
+import { tankTypes } from '../engine/tankTypes';
 import { applyTable, checkTable, columnsOf, diffRows, listDatasets, tableOf, type DsRef } from '../importer/datasetTables';
 import { LightshipForm, ParticularsForm } from './VesselManager';
+import { TankTypesEditor, TankTypesView } from './TankTypesEditor';
 
 interface Props {
   current: VesselEntry;
@@ -52,7 +54,7 @@ export function ImportedDataScreen(p: Props) {
             if (!items.length) return null;
             return (
               <div key={g}>
-                <div className="ds-group">{g}{g === 'Tanks' ? ` (${items.length})` : ''}</div>
+                <div className="ds-group">{g.startsWith('Tanks · ') && <span className="dot" style={{ background: tankTypes(v).find((t) => `Tanks · ${t.name}` === g)?.color }} />}{g}{g.startsWith('Tanks · ') ? ` (${items.length})` : ''}</div>
                 {items.map((d) => {
                   const st = statusOf(d);
                   return (
@@ -67,7 +69,10 @@ export function ImportedDataScreen(p: Props) {
         </nav>
         <div className="ds-main">
           <SourceRecord pr={prov[ref.key === 'LIGHTSHIP' ? 'LIGHTSHIP' : ref.key]} builtIn={!mine} status={p.current.status} source={p.current.source} />
-          {ref.kind === 'PARTICULARS' || ref.kind === 'LIGHTSHIP_SUMMARY'
+          {ref.kind === 'TANK_TYPES'
+            ? (editing && mine ? <TankTypesEditor u={mine} save={p.saveUserVessel} onDone={() => setEditing(false)} />
+              : <section className="panel"><div className="panel-head"><h2>Tank types</h2>{mine && <button onClick={() => setEditing(true)}>Edit</button>}</div><TankTypesView v={v} /></section>)
+            : ref.kind === 'PARTICULARS' || ref.kind === 'LIGHTSHIP_SUMMARY'
             ? <FormDataset key={`${ref.key}-${p.current.id}`} kind={ref.kind} v={v} mine={mine} save={p.saveUserVessel} editing={editing} setEditing={setEditing} />
             : <TableDataset key={`${ref.key}-${p.current.id}`} ref_={ref} v={v} mine={mine} save={p.saveUserVessel} editing={editing} setEditing={setEditing} onDeleted={() => setSel('HYDRO trim 0')} />}
         </div>

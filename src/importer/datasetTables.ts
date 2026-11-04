@@ -1,12 +1,13 @@
 // Every data set of a vessel as a plain table (for viewing and editing), and back into the vessel.
 // Writing back uses the same applyToVessel / checks / read-back as an import.
 import type { Vessel } from '../engine/types';
+import { groupByType, tankTypes } from '../engine/tankTypes';
 import type { DatasetKind } from './datasets';
 import { applyToVessel, compareRows, expectedRows, storedRows, type ApplyOptions } from './apply';
 import { checkConversion, type Check } from './checks';
 import type { ConvCell, Conversion } from './convert';
 
-export type DsKind = DatasetKind | 'PARTICULARS' | 'LIGHTSHIP_SUMMARY';
+export type DsKind = DatasetKind | 'PARTICULARS' | 'LIGHTSHIP_SUMMARY' | 'TANK_TYPES';
 export interface DsRef { key: string; title: string; group: string; kind: DsKind; trim?: number; tank?: string; rows: number }
 export interface DsColumn { key: string; label: string; unit: string; type: 'num' | 'text' }
 
@@ -21,7 +22,8 @@ export function listDatasets(v: Vessel): DsRef[] {
   for (const t of kTrims) out.push({ key: `KN trim ${t.trim}`, title: `Cross curves (KN), trim ${t.trim} m`, group: 'Cross curves', kind: 'KN', trim: t.trim, rows: t.n });
   out.push({ key: 'WINDAGE', title: 'Windage', group: 'Wind and flooding', kind: 'WINDAGE', rows: v.windage.length });
   out.push({ key: 'OPENINGS', title: 'Down-flooding openings', group: 'Wind and flooding', kind: 'OPENINGS', rows: v.openings.length });
-  for (const t of v.tanks) out.push({ key: `TANK ${t.name}`, title: t.name, group: 'Tanks', kind: 'TANK', tank: t.name, rows: t.calibration.length });
+  out.push({ key: 'TANK TYPES', title: `Tank types (${tankTypes(v).length})`, group: 'Tanks', kind: 'TANK_TYPES', rows: tankTypes(v).length });
+  for (const g of groupByType(v, v.tanks, (t) => t)) for (const t of g.items) out.push({ key: `TANK ${t.name}`, title: t.name, group: `Tanks · ${g.type.name}`, kind: 'TANK', tank: t.name, rows: t.calibration.length });
   return out;
 }
 
@@ -40,11 +42,11 @@ export function columnsOf(v: Vessel, ref: DsRef): DsColumn[] {
 
 export function optionsOf(v: Vessel, ref: DsRef): ApplyOptions {
   const t = ref.tank ? v.tanks.find((x) => x.name === ref.tank) : undefined;
-  return { trim: ref.trim ?? 0, angles: ref.kind === 'KN' ? v.kn.angles : undefined, tank: t ? { name: t.name, group: t.group, density: t.density, isConsumable: t.isConsumable } : undefined };
+  return { trim: ref.trim ?? 0, angles: ref.kind === 'KN' ? v.kn.angles : undefined, tank: t ? { name: t.name, group: t.group, density: t.density, isConsumable: t.isConsumable, type: t.type } : undefined };
 }
 
 export function tableOf(v: Vessel, ref: DsRef): (number | string)[][] {
-  if (ref.kind === 'PARTICULARS' || ref.kind === 'LIGHTSHIP_SUMMARY') return [];
+  if (ref.kind === 'PARTICULARS' || ref.kind === 'LIGHTSHIP_SUMMARY' || ref.kind === 'TANK_TYPES') return [];
   return storedRows(ref.kind, v, optionsOf(v, ref)) ?? [];
 }
 
@@ -68,7 +70,7 @@ export function toConversion(ref: DsRef, cols: DsColumn[], rows: (number | strin
 }
 
 export function checkTable(v: Vessel, ref: DsRef, cols: DsColumn[], rows: (number | string)[][]): Check[] {
-  if (ref.kind === 'PARTICULARS' || ref.kind === 'LIGHTSHIP_SUMMARY') return [];
+  if (ref.kind === 'PARTICULARS' || ref.kind === 'LIGHTSHIP_SUMMARY' || ref.kind === 'TANK_TYPES') return [];
   const conv = toConversion(ref, cols, rows);
   const t = ref.tank ? v.tanks.find((x) => x.name === ref.tank) : undefined;
   return checkConversion(ref.kind, conv, v, { density: t?.density }).filter((c) => !/re-read digit by digit|rows in the selected range/.test(c.title));
@@ -76,7 +78,7 @@ export function checkTable(v: Vessel, ref: DsRef, cols: DsColumn[], rows: (numbe
 
 /** Write edited rows into the vessel and read them back. */
 export function applyTable(v: Vessel, ref: DsRef, cols: DsColumn[], rows: (number | string)[][]): { vessel: Vessel; ok: boolean; text: string } {
-  if (ref.kind === 'PARTICULARS' || ref.kind === 'LIGHTSHIP_SUMMARY' || ref.kind === 'WEIGHTS' || ref.kind === 'LIGHTSHIP') throw new Error('not a table data set');
+  if (ref.kind === 'PARTICULARS' || ref.kind === 'LIGHTSHIP_SUMMARY' || ref.kind === 'TANK_TYPES' || ref.kind === 'WEIGHTS' || ref.kind === 'LIGHTSHIP') throw new Error('not a table data set');
   const o = optionsOf(v, ref);
   const conv = toConversion(ref, cols, rows);
   const v2 = applyToVessel(ref.kind, v, conv, o);

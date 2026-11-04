@@ -49,7 +49,10 @@ export type TankGroup = 'BALLAST' | 'FUEL_OIL' | 'DIESEL_OIL' | 'LUB_OIL' | 'FRE
 export interface Tank {
   id: string;
   name: string;
+  /** category (used for consumables and colours) */
   group: TankGroup;
+  /** tank type as named in the booklet, e.g. "WATER BALLAST", "BRINE" (default: the category name) */
+  type?: string;
   capacity: number;       // m³ at 100 %
   density: number;        // default liquid density t/m³
   isConsumable: boolean;
@@ -92,6 +95,8 @@ export interface Vessel {
   bilgeKeelArea: number; // A_k (m²); used for k whenever it is > 0 and bilge keels are fitted
   /** Bilge keels and/or bar keel fitted with known total area A_k. Undefined = fitted when bilgeKeelArea > 0. */
   hasBilgeKeels?: boolean;
+  /** Tank types in display order (name, category, colour, default density, consumable). */
+  tankTypes?: { name: string; category: TankGroup; color: string; density?: number; consumable: boolean }[];
   /** Optional lightship breakdown; the totals are in `lightship`. */
   lightshipItems?: { description: string; weight: number; lcg: number; tcg: number; vcg: number }[];
   lightship: Lightship;

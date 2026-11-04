@@ -7,6 +7,7 @@ import { DEFAULT_GROUP_IDS } from '../engine/criteriaGroups';
 import { buildDbFile, mergeDb, readDbFile, summarize, type DbData, type DbPreview, type UserVesselEntry } from '../importer/dbFile';
 import { missingVerification, newId } from '../store';
 import { saveFile } from '../report/save';
+import { TankTypesEditor } from './TankTypesEditor';
 
 interface Props {
   entries: VesselEntry[];
@@ -25,6 +26,7 @@ interface Props {
 export function VesselManager(p: Props) {
   const [form, setForm] = useState<{ id: string | null } | null>(null);
   const [lightForm, setLightForm] = useState<string | null>(null);
+  const [typesForm, setTypesForm] = useState<string | null>(null);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const mine = p.userVessels.find((u) => u.id === p.current.id);
   return (
@@ -52,6 +54,7 @@ export function VesselManager(p: Props) {
                       <button className="ghost tiny" onClick={() => p.openVessel(p.makeCopy(e))}>Copy as mine</button>
                       {u && <button className="ghost tiny" onClick={() => { p.openVessel(e.id); setLightForm(null); setForm({ id: e.id }); }}>Edit particulars</button>}
                       {u && <button className="ghost tiny" onClick={() => { p.openVessel(e.id); setForm(null); setLightForm(e.id); }}>Edit lightship</button>}
+                      {u && <button className="ghost tiny" onClick={() => { p.openVessel(e.id); setForm(null); setLightForm(null); setTypesForm(e.id); }}>Edit tank types</button>}
                       {u && (confirmDel === e.id
                         ? <><button className="danger tiny" onClick={() => { p.removeUserVessel(e.id); setConfirmDel(null); }}>Delete with its load cases</button><button className="ghost tiny" onClick={() => setConfirmDel(null)}>Keep</button></>
                         : <button className="ghost tiny" onClick={() => setConfirmDel(e.id)}>Delete</button>)}
@@ -70,6 +73,8 @@ export function VesselManager(p: Props) {
 
       {lightForm && p.userVessels.find((u) => u.id === lightForm) && <LightshipForm key={lightForm} u={p.userVessels.find((u) => u.id === lightForm)!}
         onCancel={() => setLightForm(null)} onSave={(u) => { p.saveUserVessel(u); setLightForm(null); }} />}
+
+      {typesForm && p.userVessels.find((u) => u.id === typesForm) && <TankTypesEditor key={typesForm} u={p.userVessels.find((u) => u.id === typesForm)!} save={p.saveUserVessel} onDone={() => setTypesForm(null)} />}
 
       {mine && <Provenances u={mine} />}
 

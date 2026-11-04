@@ -6,7 +6,7 @@ import type { CriteriaGroupResult, Results } from '../engine/types';
 import { ENGINE_VERSION } from '../engine/stability';
 import { DEJAVU_BOLD, DEJAVU_REGULAR } from './fonts/dejavu';
 import {
-  DISCLAIMER, conditionRows, criterionCells, n, particularsRows, reportHash, tankRows, traceRows, weightRows, type ReportInput,
+  DISCLAIMER, conditionRows, criterionCells, n, particularsRows, reportHash, tankRowsByType, traceRows, weightRows, type ReportInput,
 } from './reportData';
 
 type Doc = jsPDF & { lastAutoTable?: { finalY: number } };
@@ -88,11 +88,18 @@ export async function buildPdf(input: ReportInput): Promise<Blob> {
       { columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } } });
   }
 
-  heading('4  Tank status');
-  const tr = tankRows(r);
-  if (tr.length) table(['Tank', 'Input', '%', 'Volume m³', 'ρ t/m³', 'Weight t', 'LCG m', 'TCG m', 'VCG m', 'FSM t·m'], tr,
-    { styles: { font: 'DejaVu', fontSize: 6.8, cellPadding: 1 }, columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9].map((i) => [i, { halign: 'right' }])) });
-  para(`${r.tanks.length - tr.length} tank(s) empty and not listed. LCG measured from AP; TCG positive to starboard.`, 7, MUTED);
+  heading('4  Tank status by tank type');
+  const tt = tankRowsByType(vessel, r);
+  table(['Tank', 'Input', '%', 'Volume m³', 'ρ t/m³', 'Weight t', 'LCG m', 'TCG m', 'VCG m', 'FSM t·m'], tt.map((x) => x.cells), {
+    styles: { font: 'DejaVu', fontSize: 6.8, cellPadding: 1 }, columnStyles: Object.fromEntries([2, 3, 4, 5, 6, 7, 8, 9].map((i) => [i, { halign: 'right' }])),
+    didParseCell: (d: { section: string; row: { index: number }; column: { index: number }; cell: { styles: Record<string, unknown>; colSpan?: number } }) => {
+      if (d.section !== 'body') return;
+      const k = tt[d.row.index]?.kind;
+      if (k === 'head') { d.cell.styles.fillColor = [226, 236, 236]; d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = [...NAVY]; }
+      if (k === 'total') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [250, 250, 250]; }
+    },
+  });
+  para('Empty tanks are counted in the heading line of their type but not listed. LCG measured from AP; TCG positive to starboard.', 7, MUTED);
 
   heading('5  Stability criteria summary');
   table(['Stability group', 'Regulation', 'Criteria', 'Result'], r.groups.map((g) => [g.name, g.regulation, `${g.criteria.filter((c) => c.passed).length} / ${g.criteria.length}`, g.error ? 'NOT EVALUATED' : g.passed ? 'PASS' : 'FAIL']),

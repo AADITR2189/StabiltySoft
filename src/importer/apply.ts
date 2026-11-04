@@ -8,7 +8,7 @@ export interface ApplyOptions {
   trim: number;
   /** KN: heel angle of each KN column, in column order */
   angles?: number[];
-  tank?: { name: string; group: TankGroup; density: number; isConsumable: boolean };
+  tank?: { name: string; group: TankGroup; density: number; isConsumable: boolean; type?: string };
 }
 
 export interface Provenance {
@@ -141,7 +141,8 @@ export function applyToVessel(kind: DatasetKind, v0: Vessel, c: Conversion, o: A
   if (kind === 'TANK') {
     const t = o.tank!;
     const cal = c.rows.map((r) => ({ ...(n(r, 'sounding') !== undefined ? { sounding: n(r, 'sounding') } : {}), volume: n(r, 'volume')!, lcg: n(r, 'lcg')!, tcg: n(r, 'tcg')!, vcg: n(r, 'vcg')!, inertia: inertiaOf(r, o) }));
-    const tank: Tank = { id: t.name, name: t.name, group: t.group, density: t.density, isConsumable: t.isConsumable, capacity: Math.max(...cal.map((x) => x.volume)), calibration: cal };
+    const prevType = t.type ?? v.tanks.find((x) => x.name === t.name)?.type;
+    const tank: Tank = { id: t.name, name: t.name, ...(prevType ? { type: prevType } : {}), group: t.group, density: t.density, isConsumable: t.isConsumable, capacity: Math.max(...cal.map((x) => x.volume)), calibration: cal };
     v.tanks = [...v.tanks.filter((x) => x.name !== t.name), tank];
   }
   if (kind === 'WINDAGE') {

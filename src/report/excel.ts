@@ -2,6 +2,7 @@
 // one GZ sheet per stability group, plus a summary of all load cases of the vessel.
 import ExcelJS from 'exceljs';
 import type { Results } from '../engine/types';
+import { groupByType, typeTotals } from '../engine/tankTypes';
 import {
   DISCLAIMER, conditionRows, criterionCells, particularsRows, reportHash, traceRows, type ReportInput,
 } from './reportData';
@@ -70,9 +71,19 @@ export async function buildXlsx(input: ReportInput): Promise<Blob> {
   // ---------- Tanks ----------
   const t = wb.addWorksheet(sheetName('Tanks'));
   t.columns = [{ width: 22 }, { width: 11 }, { width: 9 }, { width: 12 }, { width: 10 }, { width: 11 }, { width: 11 }, { width: 11 }, { width: 11 }, { width: 11 }];
-  title(t, 'Tank status');
+  title(t, 'Tank status by tank type');
   header(t, ['Tank', 'Input', '%', 'Volume (m³)', 'ρ (t/m³)', 'Weight (t)', 'LCG (m)', 'TCG (m)', 'VCG (m)', 'FSM (t·m)']);
-  for (const k of r.tanks) t.addRow([k.name, k.mode.toLowerCase(), k.percent, k.volume, k.density, k.weight, k.lcg, k.tcg, k.vcg, k.fsm]);
+  for (const g of groupByType(vessel, vessel.tanks, (x) => x)) {
+    const rs = g.items.map((x) => r.tanks.find((y) => y.tankId === x.id)).filter((x): x is NonNullable<typeof x> => !!x);
+    const hr = t.addRow([`${g.type.name} (${g.items.length} tanks)`]);
+    hr.font = { bold: true, color: { argb: 'FF1F3A5F' } };
+    hr.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2ECEC' } };
+    for (const k of rs) t.addRow([k.name, k.mode.toLowerCase(), k.percent, k.volume, k.density, k.weight, k.lcg, k.tcg, k.vcg, k.fsm]);
+    const tot = typeTotals(rs);
+    const cap = g.items.reduce((s2, x) => s2 + x.capacity, 0);
+    const sr = t.addRow([`Subtotal ${g.type.name}`, '', cap > 0 ? (tot.volume / cap) * 100 : 0, tot.volume, '', tot.weight, tot.weight > 0 ? tot.lcg : '', tot.weight > 0 ? tot.tcg : '', tot.weight > 0 ? tot.vcg : '', tot.fsm]);
+    sr.font = { bold: true };
+  }
   numFmt(t, [3, 4, 5, 6, 7, 8, 9, 10], '0.000');
   t.views = [{ state: 'frozen', ySplit: 5 }];
 
