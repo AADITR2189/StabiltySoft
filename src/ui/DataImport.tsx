@@ -13,6 +13,8 @@ import { newId } from '../store';
 import { KvSection } from './KvImport';
 import { MultiTankSection } from './MultiTankImport';
 import { PdfPage } from './PdfPage';
+import { looksLikeOpeningLines, splitOpeningLines } from '../importer/openingsList';
+import { WindageBookletSection } from './WindageBooklet';
 import { ReviewTable, SourceGrid } from './ImportTables';
 import type { KvKind } from '../importer/keyValue';
 
@@ -28,14 +30,15 @@ interface Props {
   openVessel: (id: string) => void;
 }
 
-type Mode = DatasetKind | KvKind | 'TANKS_ALL';
+type Mode = DatasetKind | KvKind | 'TANKS_ALL' | 'WINDAGE_BOOKLET';
 
 const GROUPS: TankGroup[] = ['BALLAST', 'FUEL_OIL', 'DIESEL_OIL', 'LUB_OIL', 'FRESH_WATER', 'MISC'];
 
 export function DataImportScreen(p: Props) {
   const [mode, setMode] = useState<Mode>('PARTICULARS');
   const isMulti = mode === 'TANKS_ALL';
-  const isKv = mode === 'PARTICULARS' || mode === 'LIGHTSHIP_SUMMARY' || isMulti;
+  const isWindBk = mode === 'WINDAGE_BOOKLET';
+  const isKv = mode === 'PARTICULARS' || mode === 'LIGHTSHIP_SUMMARY' || isMulti || isWindBk;
   const kind: DatasetKind = isKv ? 'HYDRO' : (mode as DatasetKind);
   const def = datasetDef(kind);
   const target = p.userVessels.find((u) => u.id === p.current.id);
@@ -55,6 +58,11 @@ export function DataImportScreen(p: Props) {
   const [paste, setPaste] = useState('');
   const [tableId, setTableId] = useState('');
   const table = doc?.tables.find((t) => t.id === tableId) ?? doc?.tables[0];
+  // flooding points printed as "name  L, T, V" lines → split into columns
+  const autoLines = !!table && kind === 'OPENINGS' && looksLikeOpeningLines(table.rows);
+  const [linesOpt, setLinesOpt] = useState<boolean | null>(null);
+  const useLines = kind === 'OPENINGS' && (linesOpt ?? autoLines);
+  const srcRows = useMemo(() => (table ? (useLines ? splitOpeningLines(table.rows).rows : table.rows) : []), [table, useLines]);
 
   // mapping and conversion
   const [mapping, setMapping] = useState<Mapping | null>(null);
@@ -69,14 +77,14 @@ export function DataImportScreen(p: Props) {
   // new table or dataset → guess the mapping
   useEffect(() => {
     if (!table) { setMapping(null); return; }
-    setMapping(autoMapping(def, table.rows, mapping?.decimal ?? '.', vessel.lbp));
+    setMapping(autoMapping(def, srcRows, mapping?.decimal ?? '.', vessel.lbp));
     resetReview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table?.id, doc, kind]);
+  }, [table?.id, doc, kind, useLines]);
 
   useEffect(() => {
     if (!table || !mapping) { setConv(null); return; }
-    setConv(convert(def, table.rows, { ...mapping, lbp: vessel.lbp }));
+    setConv(convert(def, srcRows, { ...mapping, lbp: vessel.lbp }));
     resetReview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapping, vessel.lbp]);
@@ -105,7 +113,7 @@ export function DataImportScreen(p: Props) {
   async function onFile(f: File | undefined) {
     if (!f) return;
     setReading(true); setReadErr(null); setDoc(null); setResult(null);
-    try { const d = await readSource(f); setDoc(d); if (mode !== 'TANKS_ALL') setTableId(pickTable(d, mode)); }
+    try { const d = await readSource(f); setDoc(d); if (mode !== 'TANKS_ALL' && mode !== 'WINDAGE_BOOKLET') setTableId(pickTable(d, mode)); }
     catch (e) { setReadErr(e instanceof Error ? e.message : String(e)); }
     finally { setReading(false); }
   }
@@ -171,10 +179,11 @@ export function DataImportScreen(p: Props) {
         <div className="panel-head"><h2>1 · What to import, and into which vessel</h2></div>
         <div className="form-row">
           <label>Data set
-            <select value={mode} onChange={(e) => { setMode(e.target.value as Mode); setResult(null); if (doc && e.target.value !== 'TANKS_ALL') setTableId(pickTable(doc, e.target.value as DatasetKind | KvKind)); }}>
+            <select value={mode} onChange={(e) => { setMode(e.target.value as Mode); setResult(null); if (doc && e.target.value !== 'TANKS_ALL' && e.target.value !== 'WINDAGE_BOOKLET') setTableId(pickTable(doc, e.target.value as DatasetKind | KvKind)); }}>
               <option value="PARTICULARS">General particulars (label / value list)</option>
               <option value="LIGHTSHIP_SUMMARY">Lightship: total weight and centres (label / value list)</option>
               <option value="TANKS_ALL">Tank calibration: all tanks at once</option>
+              <option value="WINDAGE_BOOKLET">Windage: from the wind heeling moment tables of the loading conditions (booklet)</option>
               {DATASETS.map((d) => <option key={d.kind} value={d.kind}>{d.label}</option>)}
             </select>
           </label>
@@ -199,7 +208,7 @@ export function DataImportScreen(p: Props) {
           </>}
           {!isKv && kind === 'WEIGHTS' && <p className="muted small" style={{ alignSelf: 'end' }}>Added to load case: <b>{p.lc.name}</b></p>}
         </div>
-        <p className="muted small">{isMulti ? 'Every tank calibration table in the file in one go: the booklet tank pages, an Excel workbook with one sheet per tank, or one long table with a tank-name column. Columns are mapped once; each tank is checked on its own and stored with its own record.' : isKv ? (mode === 'PARTICULARS' ? 'Ship name, IMO, call sign, LBP, breadth, depth, draft, density and bilge keel area are found by their labels (e.g. "LBP ...... 57.400 m"). Fields not in the source keep their present value.' : 'Lightship weight, LCG, TCG and VCG found by their labels (e.g. "Lightship LCG = 0.592 m AFT of MIDSHIP"). Words like aft / fwd of midship and port / starboard are understood.') : def.help}</p>
+        <p className="muted small">{isWindBk ? 'Booklets often have no windage table: each loading condition shows the wind heeling moment derivation (parts with area LPA, height HCP above the waterline, lever). With the draft of each condition this gives one windage row per draft. The printed total moment is re-calculated as a check.' : isMulti ? 'Every tank calibration table in the file in one go: the booklet tank pages, an Excel workbook with one sheet per tank, or one long table with a tank-name column. Columns are mapped once; each tank is checked on its own and stored with its own record.' : isKv ? (mode === 'PARTICULARS' ? 'Ship name, IMO, call sign, LBP, breadth, depth, draft, density and bilge keel area are found by their labels (e.g. "LBP ...... 57.400 m"). Fields not in the source keep their present value.' : 'Lightship weight, LCG, TCG and VCG found by their labels (e.g. "Lightship LCG = 0.592 m AFT of MIDSHIP"). Words like aft / fwd of midship and port / starboard are understood.') : def.help}</p>
         {(isKv || kind !== 'WEIGHTS') && !target && (
           <div className="notice warn-notice">
             <b>{p.current.vessel.name}</b> is a built-in vessel and cannot be changed. Make your own copy to import into, or create a new vessel in Vessel Database.
@@ -227,7 +236,8 @@ export function DataImportScreen(p: Props) {
       </section>
 
       {isMulti && doc && <MultiTankSection key={doc.sha256} doc={doc} vessel={vessel} target={target} save={p.saveUserVessel} />}
-      {isKv && !isMulti && doc && <KvSection kind={mode as KvKind} doc={doc} tableId={table?.id ?? ''} setTableId={setTableId} vessel={vessel} target={target} save={p.saveUserVessel} />}
+      {isWindBk && doc && <WindageBookletSection key={doc.sha256} doc={doc} vessel={vessel} target={target} save={p.saveUserVessel} />}
+      {isKv && !isMulti && !isWindBk && doc && <KvSection kind={mode as KvKind} doc={doc} tableId={table?.id ?? ''} setTableId={setTableId} vessel={vessel} target={target} save={p.saveUserVessel} />}
 
       {/* 3. table and columns */}
       {!isKv && doc && table && mapping && (
@@ -263,9 +273,15 @@ export function DataImportScreen(p: Props) {
               </label>
             )}
           </div>
+          {kind === 'OPENINGS' && (
+            <label className="confirm small">
+              <input type="checkbox" checked={useLines} onChange={(e) => setLinesOpt(e.target.checked)} />
+              Points are printed as lines "name  L, T, V" (e.g. <span className="mono">(1) POSITION 1(S) 9.700f, 5.400s, 12.150</span>): split each line into name, X, Y, Z
+            </label>
+          )}
           <p className="muted small">Letters after numbers are understood: <b>a / f</b> = aft / forward of midship, <b>s / p</b> = starboard / port. LBP used for conversion: {vessel.lbp} m.</p>
           <div className="import-source">
-            <SourceGrid rows={table.rows} mapping={mapping} def={def} onMap={setMap} />
+            <SourceGrid rows={srcRows} mapping={mapping} def={def} onMap={setMap} />
             {doc.renderPage && table.page && <PdfPage doc={doc} page={table.page} />}
           </div>
         </section>
@@ -326,7 +342,7 @@ export function DataImportScreen(p: Props) {
 
 function pickTable(d: SourceDoc, kind: DatasetKind | KvKind): string {
   const words: Record<DatasetKind | KvKind, RegExp> = {
-    HYDRO: /hydrostat/i, KN: /cross\s*curve|KN/i, TANK: /sounding|ullage|calibration/i, WINDAGE: /wind|lateral/i, OPENINGS: /flood|opening/i, WEIGHTS: /weight|deadweight/i,
+    HYDRO: /hydrostat/i, KN: /cross\s*curve|KN/i, TANK: /sounding|ullage|calibration/i, WINDAGE: /wind|lateral/i, OPENINGS: /down\s*flood|flooding\s*(points|openings)|unprotected\s*(flood|opening)/i, WEIGHTS: /weight|deadweight/i,
     LIGHTSHIP: /light\s*ship.*(weight|estimat|breakdown)/i, PARTICULARS: /general\s*particulars|principal\s*(particulars|dimensions)|main\s*particulars/i, LIGHTSHIP_SUMMARY: /light\s*ship\s*(weight|lcg|vcg)/i,
   };
   const flat = (x: SourceDoc['tables'][number], n: number) => x.rows.slice(0, n).map((r) => r.join(' ')).join('\n');
@@ -335,7 +351,9 @@ function pickTable(d: SourceDoc, kind: DatasetKind | KvKind): string {
     PARTICULARS: (t) => /\b(lbp|lpp|length\s*b\.?p)\b[^\n]*\d/i.test(t) && /breadth[^\n]*\d/i.test(t),
     LIGHTSHIP_SUMMARY: (t) => /light\s*ship[^\n]*(weight|lcg|vcg)[^\n]*\d/i.test(t),
   };
-  const t = kv[kind] ? d.tables.find((x) => kv[kind]!(flat(x, 80))) : d.tables.find((x) => words[kind].test(flat(x, 8)));
+  const t = kv[kind] ? d.tables.find((x) => kv[kind]!(flat(x, 80)))
+    : kind === 'OPENINGS' ? (d.tables.find((x) => words.OPENINGS.test(flat(x, 12)) && looksLikeOpeningLines(x.rows)) ?? d.tables.find((x) => looksLikeOpeningLines(x.rows) && /flood|opening/i.test(flat(x, 40))))
+    : d.tables.find((x) => words[kind].test(flat(x, 8)));
   return (t ?? d.tables[0])?.id ?? '';
 }
 

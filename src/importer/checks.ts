@@ -137,6 +137,14 @@ export function checkConversion(kind: DatasetKind, c: Conversion, v: Vessel, opt
     if (L) out.push(within(c, 'x', 'X', 0, L * 1.1, 'the ship length'));
     if (B) out.push(within(c, 'y', 'Y', -B / 2, B / 2, 'the ship breadth'));
     if (v.depth) out.push(within(c, 'z', 'Z', 0, v.depth * 6, 'plausible height'));
+    const side = c.rows.filter((r) => {
+      const n = String(r.cells.name?.value ?? '').toUpperCase(), y = numVal(r.cells.y);
+      if (y === undefined || Math.abs(y) < 1e-9) return false;
+      const port = /\(P\)|\bP\b|PORT|\bPS\b|\.P\b/.test(n), stbd = /\(S\)|\bS\b|STBD|STARBOARD|\bSB\b|\.S\b/.test(n);
+      return (port && y > 0) || (stbd && y < 0);
+    });
+    out.push(side.length ? { level: 'warn', title: 'Name says port / starboard but Y is on the other side', detail: `${side.map((r) => `${r.cells.name?.value} (row ${r.src + 1}, Y = ${numVal(r.cells.y)})`).join('; ')}. Check the booklet (a printing error is possible) and correct the sign.`, rows: side.map((r) => r.src) }
+      : { level: 'ok', title: 'Port / starboard in the names agree with the sign of Y' });
     const names = c.rows.map((r) => String(r.cells.name?.value ?? ''));
     const dup = names.filter((n, i) => n && names.indexOf(n) !== i);
     out.push(dup.length ? { level: 'warn', title: `Duplicate opening names: ${[...new Set(dup)].join(', ')}` } : { level: 'ok', title: 'Opening names are unique' });

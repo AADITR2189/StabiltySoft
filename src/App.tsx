@@ -8,16 +8,18 @@ import type { VesselEntry } from './data/vessels';
 import type { DbData } from './importer/dbFile';
 import { DataImportScreen } from './ui/DataImport';
 import { VesselManager } from './ui/VesselManager';
+import { ImportedDataScreen } from './ui/ImportedData';
 import { CriteriaLibraryScreen } from './ui/CriteriaLibrary';
 import { ReportsScreen } from './ui/Reports';
 import { LoadCaseEditor } from './ui/LoadCaseEditor';
 import { Criteria, Dashboard, ResultsSidebar, VesselData } from './ui/Screens';
 
-type Screen = 'dashboard' | 'loadcase' | 'criteria' | 'library' | 'vessel' | 'reports' | 'import';
+type Screen = 'dashboard' | 'loadcase' | 'criteria' | 'library' | 'vessel' | 'reports' | 'import' | 'data';
 const NAV: { id: Screen; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '▣' },
   { id: 'vessel', label: 'Vessel Database', icon: '⛴' },
   { id: 'import', label: 'Data Import', icon: '⇪' },
+  { id: 'data', label: 'Imported Data', icon: '▤' },
   { id: 'loadcase', label: 'Load Case', icon: '☰' },
   { id: 'criteria', label: 'Stability Criteria', icon: '✓' },
   { id: 'library', label: 'Criteria Library', icon: '⚖' },
@@ -114,6 +116,7 @@ export default function App() {
               makeCopy={makeCopy} openVessel={store.setVessel} dbData={dbData} applyDb={applyDb} builtinIds={VESSELS.map((v) => v.id)} storageError={userVessels.saveError} />
             <VesselData vessel={vessel} status={status} source={store.entry.source} />
           </>}
+          {screen === 'data' && <ImportedDataScreen current={store.entry} userVessels={userVessels.list} saveUserVessel={userVessels.save} makeCopy={makeCopy} openVessel={store.setVessel} />}
           {screen === 'import' && <DataImportScreen entries={entries} current={store.entry} userVessels={userVessels.list} saveUserVessel={userVessels.save}
             lc={lc} updateLoadCase={store.update} makeCopy={makeCopy} openVessel={store.setVessel} />}
         </div>

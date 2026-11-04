@@ -121,7 +121,7 @@ function kPreview(keels: boolean, area: Num, bilge: string, L: Num, B: Num): str
   return bilge === 'SHARP' ? 'No bilge keel area: k = 0.7 for a ship with sharp bilges (IS Code 2008 A 2.3.4).' : 'No bilge keel area: k = 1.0 for a round-bilged ship without bilge or bar keels (IS Code 2008 A 2.3.4).';
 }
 
-function ParticularsForm({ existing, onSave, onCancel }: { existing?: UserVesselEntry; onSave: (u: UserVesselEntry) => void; onCancel: () => void }) {
+export function ParticularsForm({ existing, onSave, onCancel }: { existing?: UserVesselEntry; onSave: (u: UserVesselEntry) => void; onCancel: () => void }) {
   const v = existing?.vessel;
   const [s, setS] = useState({
     name: v?.name ?? '', imo: v?.imo ?? '', callSign: v?.callSign ?? '',
@@ -190,7 +190,7 @@ function ParticularsForm({ existing, onSave, onCancel }: { existing?: UserVessel
 }
 
 type Item = { description: string; weight: Num; lcg: Num; tcg: Num; vcg: Num };
-function LightshipForm({ u, onSave, onCancel }: { u: UserVesselEntry; onSave: (u: UserVesselEntry) => void; onCancel: () => void }) {
+export function LightshipForm({ u, onSave, onCancel }: { u: UserVesselEntry; onSave: (u: UserVesselEntry) => void; onCancel: () => void }) {
   const v = u.vessel;
   const L = v.lbp;
   const start: Item[] = v.lightshipItems?.length

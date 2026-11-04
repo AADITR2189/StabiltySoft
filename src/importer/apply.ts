@@ -26,6 +26,8 @@ export interface Provenance {
   storedCheck: string;
   verifiedBy: string;
   verifiedAt: string;
+  /** changes made after the import, newest last */
+  edits?: { by: string; at: string; reason: string; changes: string[] }[];
 }
 
 export const datasetKey = (kind: DatasetKind, o: ApplyOptions) =>

@@ -328,3 +328,16 @@ button.tiny { font-size: 12px; padding: 1px 8px; margin: 2px 4px 2px 0; }
 .tank-list tr.open td { background: var(--surface-2); }
 .tank-detail { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 8px 0 12px; }
 .grid.review td .src { white-space: normal; max-width: 170px; margin-left: auto; }
+.data-browser { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .data-browser { grid-template-columns: 1fr; } }
+.ds-list { display: flex; flex-direction: column; gap: 2px; max-height: calc(100vh - 170px); overflow: auto; position: sticky; top: 0; }
+.ds-list input { margin-bottom: 6px; }
+.ds-group { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 10px 0 4px; font-weight: 600; }
+.ds-item { display: flex; justify-content: space-between; gap: 8px; text-align: left; background: transparent; color: var(--text); font-weight: 500; border: 1px solid transparent; padding: 5px 8px; }
+.ds-item:hover { background: var(--surface-2); }
+.ds-item.active { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
+.ds-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ds-table td.cell-edited { background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.ds-table td .src { font-size: 11px; color: var(--muted); }
+.ds-table tr.row-added td { background: color-mix(in srgb, var(--pass) 10%, transparent); }
+.edit-log { margin: 4px 0; padding-left: 18px; }
