@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import type { Vessel } from '../engine/types';
 import type { UserVesselEntry } from '../importer/dbFile';
 import type { Provenance } from '../importer/apply';
-import { applyTypeEdits, CATEGORIES, CATEGORY_LABEL, categoryOf, PALETTE, tankTypes, typeOf, type TypeEdit } from '../engine/tankTypes';
+import { applyTypeEdits, catLabel, categories, categoryId, categoryOf, PALETTE, tankTypes, typeOf, type CategoryEdit, type TypeEdit } from '../engine/tankTypes';
 
 export function TankTypesView({ v }: { v: Vessel }) {
   const types = tankTypes(v);
@@ -13,7 +13,7 @@ export function TankTypesView({ v }: { v: Vessel }) {
       <thead><tr><th>Type</th><th>Category</th><th className="num">Default density t/m³</th><th>Consumable</th><th className="num">Tanks</th><th className="num">Capacity m³</th></tr></thead>
       <tbody>{types.map((t) => {
         const ts = v.tanks.filter((x) => typeOf(x) === t.name);
-        return <tr key={t.name}><td><span className="dot" style={{ background: t.color }} />{t.name}</td><td>{CATEGORY_LABEL[t.category]}</td><td className="num">{t.density ?? '—'}</td><td>{t.consumable ? 'yes' : 'no'}</td><td className="num">{ts.length}</td><td className="num">{ts.reduce((s, x) => s + x.capacity, 0).toFixed(1)}</td></tr>;
+        return <tr key={t.name}><td><span className="dot" style={{ background: t.color }} />{t.name}</td><td>{catLabel(v, t.category)}</td><td className="num">{t.density ?? '—'}</td><td>{t.consumable ? 'yes' : 'no'}</td><td className="num">{ts.length}</td><td className="num">{ts.reduce((s, x) => s + x.capacity, 0).toFixed(1)}</td></tr>;
       })}</tbody>
     </table>
   );
@@ -21,6 +21,7 @@ export function TankTypesView({ v }: { v: Vessel }) {
 
 export function TankTypesEditor({ u, save, onDone }: { u: UserVesselEntry; save: (u: UserVesselEntry) => void; onDone: () => void }) {
   const v = u.vessel;
+  const [cats, setCats] = useState<CategoryEdit[]>(() => categories(v).map((c) => ({ ...c, orig: c.id })));
   type Row = TypeEdit & { uid: number };
   const [types, setTypes] = useState<Row[]>(() => tankTypes(v).map((t, i) => ({ ...t, orig: t.name, applyDensity: false, uid: i })));
   // tank → type uid (stable while names are being edited)
@@ -42,13 +43,15 @@ export function TankTypesEditor({ u, save, onDone }: { u: UserVesselEntry; save:
     names.some((n) => !n) && 'every type needs a name',
     new Set(names.map((n) => n.toUpperCase())).size !== names.length && 'type names must be different',
     Object.values(tankUid).some((x) => !types.some((t) => t.uid === x)) && 'every tank needs a type from the list',
+    cats.some((c) => !c.label.trim()) && 'every category needs a name',
+    new Set(cats.map((c) => c.label.trim().toLowerCase())).size !== cats.length && 'category names must be different',
   ].filter(Boolean) as string[];
 
   const preview = useMemo(() => {
     if (problems.length) return null;
-    try { return applyTypeEdits(v, types.map(({ uid: _u, ...t }) => ({ ...t, name: t.name.trim() })), tankType); } catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
+    try { return applyTypeEdits(v, types.map(({ uid: _u, ...t }) => ({ ...t, name: t.name.trim() })), tankType, cats.map((c) => ({ ...c, label: c.label.trim() }))); } catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [types, tankUid, v]);
+  }, [types, tankUid, cats, v]);
   const changes = preview && 'changes' in preview ? preview.changes : [];
   const perTank = preview && 'perTank' in preview ? preview.perTank : {};
   const nTankChanges = Object.keys(perTank).length;
@@ -74,7 +77,37 @@ export function TankTypesEditor({ u, save, onDone }: { u: UserVesselEntry; save:
 
   return (
     <section className="panel">
-      <div className="panel-head"><h2>Tank types of {v.name}</h2><span className="muted small">{types.length} types · {v.tanks.length} tanks</span></div>
+      <div className="panel-head"><h2>Tank categories and types of {v.name}</h2><span className="muted small">{cats.length} categories · {types.length} types · {v.tanks.length} tanks</span></div>
+      <h3 className="small-h">Categories</h3>
+      <p className="muted small">A category groups tank types (e.g. Ballast, Fuel oil, Brine &amp; chemicals) and sets whether new types in it are consumable. Rename, recolour or add categories; a category can be deleted when no type uses it.</p>
+      <div className="table-wrap">
+        <table className="grid types-edit">
+          <thead><tr><th>Colour</th><th>Category</th><th>Consumable by default</th><th className="num">Types</th><th className="num">Tanks</th><th /></tr></thead>
+          <tbody>
+            {cats.map((c, i) => {
+              const nTypes = types.filter((t) => t.category === c.id).length;
+              const nTanks = types.filter((t) => t.category === c.id).reduce((s2, t) => s2 + count(t.uid), 0);
+              const b = c.orig !== null ? categories(v).find((x) => x.id === c.orig) : undefined;
+              return (
+                <tr key={c.id}>
+                  <td><input type="color" value={c.color} onChange={(e) => setCats(cats.map((x, j) => (j === i ? { ...x, color: e.target.value } : x)))} aria-label={`${c.label} colour`} /></td>
+                  <td><input value={c.label} onChange={(e) => setCats(cats.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} aria-label={`Category ${i + 1} name`} />{b && b.label !== c.label && <div className="src">was {b.label}</div>}{!b && <div className="src">new</div>}</td>
+                  <td><input type="checkbox" checked={c.consumable} onChange={(e) => setCats(cats.map((x, j) => (j === i ? { ...x, consumable: e.target.checked } : x)))} aria-label={`${c.label} consumable`} />
+                    {nTypes > 0 && <button className="ghost tiny" style={{ marginLeft: 8 }} onClick={() => setTypes(types.map((t) => (t.category === c.id ? { ...t, consumable: c.consumable } : t)))}>apply to its {nTypes} type(s)</button>}</td>
+                  <td className="num">{nTypes}</td>
+                  <td className="num">{nTanks}</td>
+                  <td>{nTypes === 0 ? <button className="ghost tiny" onClick={() => setCats(cats.filter((_, j) => j !== i))}>Delete</button> : <span className="muted small">in use</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="form-row" style={{ marginTop: 8 }}>
+        <button className="ghost" onClick={() => { const label = `New category ${cats.length + 1}`; setCats([...cats, { id: categoryId(label, cats.map((c) => c.id)), label, color: PALETTE[(cats.length + 3) % PALETTE.length], consumable: false, orig: null }]); }}>+ Add category</button>
+      </div>
+
+      <h3 className="small-h" style={{ marginTop: 14 }}>Tank types</h3>
       <p className="muted small">The type groups the tank tables (load case, vessel data, reports). Its category sets the colour family and which tanks count as consumables. A new default density is applied to the tanks of the type only if you tick "set for its tanks".</p>
       <div className="table-wrap">
         <table className="grid types-edit">
@@ -87,7 +120,7 @@ export function TankTypesEditor({ u, save, onDone }: { u: UserVesselEntry; save:
                 <tr key={t.uid}>
                   <td><input type="color" value={t.color} onChange={(e) => upd(i, { color: e.target.value })} aria-label={`${t.name} colour`} /></td>
                   <td><input value={t.name} onChange={(e) => rename(i, e.target.value.toUpperCase())} aria-label={`Type ${i + 1} name`} />{t.orig && t.orig !== t.name && <div className="src">was {t.orig}</div>}</td>
-                  <td><select value={t.category} onChange={(e) => upd(i, { category: e.target.value as TypeEdit['category'] })} aria-label={`${t.name} category`}>{CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>)}</select></td>
+                  <td><select value={t.category} onChange={(e) => { const c = cats.find((x) => x.id === e.target.value); upd(i, { category: e.target.value, ...(c ? { consumable: c.consumable } : {}) }); }} aria-label={`${t.name} category`}>{cats.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></td>
                   <td className="num">
                     <input type="number" step="any" style={{ width: 80 }} value={t.density ?? ''} onChange={(e) => upd(i, { density: e.target.value === '' ? undefined : Number(e.target.value) })} aria-label={`${t.name} density`} />
                     {tanksWithOther > 0 && <label className="small" style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'flex-end' }}><input type="checkbox" checked={t.applyDensity} onChange={(e) => upd(i, { applyDensity: e.target.checked })} /> set for its {tanksWithOther} tank(s)</label>}
@@ -106,7 +139,7 @@ export function TankTypesEditor({ u, save, onDone }: { u: UserVesselEntry; save:
         </table>
       </div>
       <div className="form-row" style={{ marginTop: 8 }}>
-        <button className="ghost" onClick={() => { const name = `NEW TYPE ${types.length + 1}`; setTypes([...types, { name, category: categoryOf(name), color: PALETTE[types.length % PALETTE.length], consumable: false, orig: null, applyDensity: false, uid: Math.max(-1, ...types.map((t) => t.uid)) + 1 }]); }}>+ Add type</button>
+        <button className="ghost" onClick={() => { const name = `NEW TYPE ${types.length + 1}`; setTypes([...types, { name, category: cats.some((c) => c.id === categoryOf(name)) ? categoryOf(name) : cats[cats.length - 1]?.id ?? 'MISC', color: PALETTE[types.length % PALETTE.length], consumable: false, orig: null, applyDensity: false, uid: Math.max(-1, ...types.map((t) => t.uid)) + 1 }]); }}>+ Add type</button>
       </div>
 
       <h3 className="small-h" style={{ marginTop: 14 }}>Tanks by type</h3>
@@ -138,7 +171,7 @@ export function TankTypesEditor({ u, save, onDone }: { u: UserVesselEntry; save:
 
       {(changes.length > 0 || nTankChanges > 0) && (
         <details className="calc-details" open>
-          <summary>{changes.length} change(s) to types{nTankChanges ? `, ${nTankChanges} tank(s) affected` : ''}</summary>
+          <summary>{changes.length} change(s) to categories / types{nTankChanges ? `, ${nTankChanges} tank(s) affected` : ''}</summary>
           <ul className="edit-log">{changes.map((c, i) => <li key={i} className="mono small">{c}</li>)}
             {Object.entries(perTank).slice(0, 40).map(([n, cs]) => <li key={n} className="mono small muted">{n}: {cs.join(', ')}</li>)}</ul>
         </details>
@@ -149,7 +182,7 @@ export function TankTypesEditor({ u, save, onDone }: { u: UserVesselEntry; save:
       </div>
       {blockers.length > 0 && <p className="muted small">To save: {blockers.join(' · ')}.</p>}
       <div className="form-row">
-        <button disabled={blockers.length > 0} onClick={doSave}>Save tank types</button>
+        <button disabled={blockers.length > 0} onClick={doSave}>Save categories and types</button>
         <button className="ghost" onClick={onDone}>Cancel</button>
       </div>
       {msg && <p className="pass-text" role="status">{msg}</p>}

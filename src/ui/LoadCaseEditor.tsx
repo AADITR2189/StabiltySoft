@@ -1,6 +1,6 @@
 import type { GroupDef, LoadCase, Results, TankInput, Vessel, WeightItem } from '../engine/types';
 import { Fragment, useState } from 'react';
-import { CATEGORY_LABEL, groupByType, tankTypes, typeTotals } from '../engine/tankTypes';
+import { catLabel, groupByType, tankTypes, typeTotals } from '../engine/tankTypes';
 import { permissibleTensions, type TensionRow } from '../engine/permissibleTension';
 import { newId } from '../store';
 import { BUILTIN_GROUPS, DEFAULT_GROUP_IDS } from '../engine/criteriaGroups';
@@ -139,7 +139,7 @@ export function LoadCaseEditor({ vessel, lc, r, onChange, customGroups }: Props)
                         <button className="link" onClick={() => setCollapsed((c) => { const n = new Set(c); if (n.has(g.type.name)) n.delete(g.type.name); else n.add(g.type.name); return n; })} aria-expanded={!closed}>
                           {closed ? '▸' : '▾'} <span className="dot" style={{ background: g.type.color }} />{g.type.name}
                         </button>
-                        <span className="muted small"> · {g.items.length} tank{g.items.length > 1 ? 's' : ''} · {CATEGORY_LABEL[g.type.category].toLowerCase()}{g.type.consumable ? ' · consumable' : ''}{closed && r ? ` · ${f(tot.weight, 1)} t, ${f(cap > 0 ? (tot.volume / cap) * 100 : 0, 0)} % full` : ''}</span>
+                        <span className="muted small"> · {g.items.length} tank{g.items.length > 1 ? 's' : ''} · {catLabel(vessel, g.type.category).toLowerCase()}{g.type.consumable ? ' · consumable' : ''}{closed && r ? ` · ${f(tot.weight, 1)} t, ${f(cap > 0 ? (tot.volume / cap) * 100 : 0, 0)} % full` : ''}</span>
                       </td>
                     </tr>
                     {!closed && g.items.map((t) => {

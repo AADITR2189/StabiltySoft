@@ -10,10 +10,9 @@ import { applyToVessel, compareRows, expectedRows, storedRows, type Provenance }
 import { buildTankImports, DEFAULT_TITLE, parseTitle, splitTanks, tankChecks, type SplitMethod, type TankImport } from '../importer/multiTank';
 import type { Check } from '../importer/checks';
 import { ReviewTable, SourceGrid } from './ImportTables';
-import { tankTypes } from '../engine/tankTypes';
+import { categories, tankTypes } from '../engine/tankTypes';
 import { PdfPage } from './PdfPage';
 
-const GROUPS: TankGroup[] = ['BALLAST', 'FUEL_OIL', 'DIESEL_OIL', 'LUB_OIL', 'FRESH_WATER', 'MISC'];
 const def = datasetDef('TANK');
 
 interface Props { doc: SourceDoc; vessel: Vessel; target: UserVesselEntry | undefined; save: (u: UserVesselEntry) => void }
@@ -170,7 +169,7 @@ export function MultiTankSection({ doc, vessel, target, save }: Props) {
                       <td><input type="text" value={t.name} onChange={(ev) => upd(t.key, { name: ev.target.value })} aria-label="Tank name" /></td>
                       <td className="small muted">{where(t)}</td>
                       <td><input type="text" list="mt-types" value={t.type} onChange={(ev) => { const ty = ev.target.value.toUpperCase(); const k = tankTypes(vessel).find((x) => x.name === ty); upd(t.key, { type: ty, ...(k ? { group: k.category } : {}) }); }} aria-label={`${t.name} type`} /></td>
-                      <td><select value={t.group} onChange={(ev) => upd(t.key, { group: ev.target.value as TankGroup })}>{GROUPS.map((g) => <option key={g} value={g}>{g.replace('_', ' ').toLowerCase()}</option>)}</select></td>
+                      <td><select value={t.group} onChange={(ev) => upd(t.key, { group: ev.target.value as TankGroup })}>{categories(vessel).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></td>
                       <td className="num"><input type="number" step="any" value={t.density} onChange={(ev) => upd(t.key, { density: ev.target.value === '' ? '' : Number(ev.target.value) })} aria-label={`${t.name} density`} /></td>
                       <td><input type="checkbox" checked={t.consumable} onChange={(ev) => upd(t.key, { consumable: ev.target.checked })} aria-label={`${t.name} consumable`} /></td>
                       <td className="num">{t.conv.rows.length}</td>

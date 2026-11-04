@@ -1,6 +1,6 @@
 import type { CriteriaGroupResult, CriterionResult, LoadCase, Results, Vessel } from '../engine/types';
 import { Fragment } from 'react';
-import { CATEGORY_LABEL, groupByType, tankTypes } from '../engine/tankTypes';
+import { catLabel, groupByType, tankTypes } from '../engine/tankTypes';
 import { f, unitFmt } from './format';
 import { GzChart } from './GzChart';
 import { ConfirmDelete } from './CriteriaLibrary';
@@ -337,7 +337,7 @@ export function VesselData({ vessel, status, source }: { vessel: Vessel; status:
               {groupByType(vessel, vessel.tanks, (t) => t).map((g) => (
                 <Fragment key={g.type.name}>
                   <tr className="type-head" style={{ ['--type-color' as string]: g.type.color }}><td colSpan={6}><span className="dot" style={{ background: g.type.color }} /><b>{g.type.name}</b><span className="muted small"> · {g.items.length} tank{g.items.length > 1 ? 's' : ''}{g.type.density !== undefined ? ` · default ρ ${g.type.density}` : ''}</span></td></tr>
-                  {g.items.map((t) => <tr key={t.id}><td className="tank-name">{t.name}</td><td>{CATEGORY_LABEL[t.group]}</td><td className="num">{f(t.capacity, 1)}</td><td className="num">{f(t.density, 3)}</td><td>{t.isConsumable ? 'Yes' : 'No'}</td><td className="num">{t.calibration.length}</td></tr>)}
+                  {g.items.map((t) => <tr key={t.id}><td className="tank-name">{t.name}</td><td>{catLabel(vessel, t.group)}</td><td className="num">{f(t.capacity, 1)}</td><td className="num">{f(t.density, 3)}</td><td>{t.isConsumable ? 'Yes' : 'No'}</td><td className="num">{t.calibration.length}</td></tr>)}
                   <tr className="type-total"><td colSpan={2}>Subtotal {g.type.name}</td><td className="num">{f(g.items.reduce((s2, t) => s2 + t.capacity, 0), 1)}</td><td colSpan={3} /></tr>
                 </Fragment>
               ))}

@@ -44,7 +44,8 @@ export interface TankCalRow {
   inertia: number;  // transverse free-surface inertia i_T (m⁴)
 }
 
-export type TankGroup = 'BALLAST' | 'FUEL_OIL' | 'DIESEL_OIL' | 'LUB_OIL' | 'FRESH_WATER' | 'MISC';
+/** Tank category id. Built in: BALLAST, FUEL_OIL, DIESEL_OIL, LUB_OIL, FRESH_WATER, MISC; a vessel can add its own (Vessel.tankCategories). */
+export type TankGroup = string;
 
 export interface Tank {
   id: string;
@@ -95,6 +96,8 @@ export interface Vessel {
   bilgeKeelArea: number; // A_k (m²); used for k whenever it is > 0 and bilge keels are fitted
   /** Bilge keels and/or bar keel fitted with known total area A_k. Undefined = fitted when bilgeKeelArea > 0. */
   hasBilgeKeels?: boolean;
+  /** Tank categories of this vessel (built-in ones, possibly renamed, plus own ones). Undefined = the built-in list. */
+  tankCategories?: { id: string; label: string; color: string; consumable: boolean }[];
   /** Tank types in display order (name, category, colour, default density, consumable). */
   tankTypes?: { name: string; category: TankGroup; color: string; density?: number; consumable: boolean }[];
   /** Optional lightship breakdown; the totals are in `lightship`. */

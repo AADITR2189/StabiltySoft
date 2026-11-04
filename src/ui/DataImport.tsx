@@ -14,6 +14,7 @@ import { KvSection } from './KvImport';
 import { MultiTankSection } from './MultiTankImport';
 import { MultiTrimSection } from './MultiTrimImport';
 import { PdfPage } from './PdfPage';
+import { categories } from '../engine/tankTypes';
 import { looksLikeOpeningLines, splitOpeningLines } from '../importer/openingsList';
 import { WindageBookletSection } from './WindageBooklet';
 import { ReviewTable, SourceGrid } from './ImportTables';
@@ -34,7 +35,6 @@ interface Props {
 type Mode = DatasetKind | KvKind | 'TANKS_ALL' | 'WINDAGE_BOOKLET' | 'HYDRO_ALL' | 'KN_ALL';
 const SPECIAL: Mode[] = ['TANKS_ALL', 'WINDAGE_BOOKLET', 'HYDRO_ALL', 'KN_ALL'];
 
-const GROUPS: TankGroup[] = ['BALLAST', 'FUEL_OIL', 'DIESEL_OIL', 'LUB_OIL', 'FRESH_WATER', 'MISC'];
 
 export function DataImportScreen(p: Props) {
   const [mode, setMode] = useState<Mode>('PARTICULARS');
@@ -207,7 +207,7 @@ export function DataImportScreen(p: Props) {
               }} placeholder="e.g. NO1_FO.P" />
               <datalist id="tank-names">{vessel.tanks.map((t) => <option key={t.id} value={t.name} />)}</datalist>
             </label>
-            <label>Group<select value={tankGroup} onChange={(e) => setTankGroup(e.target.value as TankGroup)}>{GROUPS.map((g) => <option key={g} value={g}>{g.replace('_', ' ').toLowerCase()}</option>)}</select></label>
+            <label>Category<select value={tankGroup} onChange={(e) => setTankGroup(e.target.value as TankGroup)}>{categories(vessel).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
             <label>Density t/m³<input type="number" step="any" value={tankDensity} onChange={(e) => setTankDensity(Number(e.target.value))} /></label>
             <label style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={consumable} onChange={(e) => setConsumable(e.target.checked)} /> Consumable</label>
           </>}

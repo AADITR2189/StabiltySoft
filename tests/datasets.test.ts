@@ -59,3 +59,29 @@ describe('tank types', async () => {
     expect(res.vessel.tanks.filter((t) => t.type === 'BRINE').length).toBe(0);
   });
 });
+
+describe('tank categories', async () => {
+  const { tankTypes, categories, categoryId, applyTypeEdits, typeOf, catLabel } = await import('../src/engine/tankTypes');
+  it('built-in list by default; new id from a label is unique', () => {
+    expect(categories(marsol).map((c) => c.id)).toEqual(['BALLAST', 'FUEL_OIL', 'DIESEL_OIL', 'LUB_OIL', 'FRESH_WATER', 'MISC']);
+    expect(categoryId('Brine & chemicals', ['BRINE_CHEMICALS'])).toBe('BRINE_CHEMICALS_2');
+  });
+  it('add a category, put two types in it, rename a built-in one, delete an unused one', () => {
+    const cats = categories(marsol).map((c) => ({ ...c, orig: c.id as string | null }));
+    cats.push({ id: 'CHEMICALS', label: 'Well chemicals', color: '#FF8A80', consumable: true, orig: null });
+    cats.find((c) => c.id === 'BALLAST')!.label = 'Water ballast';
+    const withoutLub = cats.filter((c) => c.id !== 'LUB_OIL');
+    const types = tankTypes(marsol).map((t) => ({ ...t, orig: t.name, applyDensity: false, category: ['ACID', 'BRINE'].includes(t.name) ? 'CHEMICALS' : t.category }));
+    const map = Object.fromEntries(marsol.tanks.map((t) => [t.name, typeOf(t)]));
+    const res = applyTypeEdits(marsol, types, map, withoutLub);
+    expect(res.changes).toEqual(expect.arrayContaining(['category added: Well chemicals (consumable)', 'category renamed: Ballast → Water ballast', 'category deleted: Lub oil', 'BRINE: category Other → Well chemicals', 'ACID: category Other → Well chemicals']));
+    expect(res.vessel.tanks.filter((t) => t.group === 'CHEMICALS').length).toBe(6);
+    expect(catLabel(res.vessel, 'BALLAST')).toBe('Water ballast');
+    expect(categories(res.vessel).map((c) => c.id)).not.toContain('LUB_OIL');
+  });
+  it('a type cannot use a category that is not in the list', () => {
+    const cats = categories(marsol).map((c) => ({ ...c, orig: c.id as string | null })).filter((c) => c.id !== 'BALLAST');
+    const types = tankTypes(marsol).map((t) => ({ ...t, orig: t.name, applyDensity: false }));
+    expect(() => applyTypeEdits(marsol, types, Object.fromEntries(marsol.tanks.map((t) => [t.name, typeOf(t)])), cats)).toThrow(/not in the list/);
+  });
+});
