@@ -9,6 +9,7 @@ import { autoMapping, convert, editCell, type Conversion, type Mapping } from '.
 import { checkConversion } from '../importer/checks';
 import { applyToVessel, applyWeights, compareRows, datasetKey, expectedRows, SORTED, storedRows, type ApplyOptions, type Provenance } from '../importer/apply';
 import { ACCEPT, fromPastedText, readSource, type SourceDoc } from '../importer/sources';
+import { pagesText, parsePages } from '../importer/multiTrim';
 import { newId } from '../store';
 import { KvSection } from './KvImport';
 import { MultiTankSection } from './MultiTankImport';
@@ -87,7 +88,7 @@ export function DataImportScreen(p: Props) {
 
   useEffect(() => {
     if (!table || !mapping) { setConv(null); return; }
-    setConv(convert(def, srcRows, { ...mapping, lbp: vessel.lbp }));
+    setConv(convert(def, srcRows, { ...mapping, lbp: vessel.lbp }, useLines ? undefined : table.conf));
     resetReview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapping, vessel.lbp]);
@@ -226,7 +227,7 @@ export function DataImportScreen(p: Props) {
       <section className="panel">
         <div className="panel-head"><h2>2 · Source</h2>{doc && <span className="muted small">{doc.fileName} · {doc.kind} · {(doc.size / 1024).toFixed(0)} KB · SHA-256 {doc.sha256.slice(0, 12)}…</span>}</div>
         <div className="form-row">
-          <label>Upload a file (PDF, Excel, CSV, Word)
+          <label>Upload a file (PDF, Excel .xlsx / .xls, CSV, Word, or a picture of a table)
             <input type="file" accept={ACCEPT} onChange={(e) => onFile(e.target.files?.[0])} aria-label="Upload a data file" />
           </label>
           <label style={{ flex: 1, minWidth: 260 }}>…or paste / type a table (copy cells from Excel, or separate values with tabs, commas or semicolons)
@@ -237,6 +238,13 @@ export function DataImportScreen(p: Props) {
         {reading && <p className="muted">Reading file…</p>}
         {readErr && <div className="error-box">{readErr}</div>}
         {doc?.warnings.map((w) => <p key={w} className="warn-text small">⚠ {w}</p>)}
+        {doc && doc.ocrPages && (doc.scannedPages?.length ?? 0) > 0 && <OcrPanel doc={doc} onDone={(tables) => {
+          const pages = new Set(tables.map((t) => t.page));
+          const nd: SourceDoc = { ...doc, tables: [...doc.tables.filter((t) => !pages.has(t.page)), ...tables].sort((a, b) => (a.page ?? 0) - (b.page ?? 0)), scannedPages: (doc.scannedPages ?? []).filter((p2) => !pages.has(p2)) };
+          setDoc(nd);
+          if (tables[0]) setTableId(tables[0].id);
+        }} />}
+        {doc?.tables.some((t) => t.ocr) && <p className="warn-text small">⚠ {doc.tables.filter((t) => t.ocr).length} page(s) were read by text recognition: digits can be misread (e.g. a lost decimal point), even when the recogniser is confident. Values it was unsure of are outlined; the checks catch most other errors; compare every row with the page image.</p>}
         {doc && doc.tables.length === 0 && <div className="error-box">No readable text or tables found in this file.</div>}
       </section>
 
@@ -342,6 +350,33 @@ export function DataImportScreen(p: Props) {
           )}
         </section>
       )}
+    </div>
+  );
+}
+
+function OcrPanel({ doc, onDone }: { doc: SourceDoc; onDone: (t: SourceDoc['tables']) => void }) {
+  const all = doc.scannedPages ?? [];
+  const [pages, setPages] = useState(all.length > 30 ? pagesText(all.slice(0, 10)) : pagesText(all));
+  const [busy, setBusy] = useState(false);
+  const [prog, setProg] = useState<{ t: string; f: number } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const list = parsePages(pages).filter((p) => all.includes(p));
+  async function run() {
+    setBusy(true); setErr(null);
+    try { onDone(await doc.ocrPages!(list, (t, f) => setProg({ t, f }))); }
+    catch (e) { setErr(`Text recognition failed: ${e instanceof Error ? e.message : String(e)}`); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="notice warn-notice" style={{ marginTop: 8 }}>
+      <b>{doc.kind === 'IMAGE' ? 'Picture of a table' : `${all.length} scanned page(s) without text`}</b>: read {doc.kind === 'IMAGE' ? 'it' : 'them'} with text recognition (OCR, in this browser, works offline after the first use).
+      {doc.kind !== 'IMAGE' && <div className="form-row" style={{ marginTop: 6 }}><label>Pages to read (scanned pages: {pagesText(all)})<input className="mono" value={pages} onChange={(e) => setPages(e.target.value)} aria-label="Pages to read" /></label></div>}
+      <div className="form-row" style={{ marginTop: 6, alignItems: 'center' }}>
+        <button disabled={busy || (!list.length && doc.kind !== 'IMAGE')} onClick={run}>{busy ? 'Reading…' : `Read ${doc.kind === 'IMAGE' ? 'the picture' : `${list.length} page(s)`} with text recognition`}</button>
+        {prog && <span className="small" role="status"><progress max={1} value={prog.f} style={{ width: 160, verticalAlign: 'middle' }} /> {prog.t}</span>}
+      </div>
+      <p className="muted small">About 1–3 s per page. Table lines are removed before reading. Every value then goes through the same checks and your row-by-row comparison.</p>
+      {err && <div className="error-box">{err}</div>}
     </div>
   );
 }

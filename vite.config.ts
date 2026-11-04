@@ -20,7 +20,13 @@ export default defineConfig({
         start_url: '.',
         icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
       },
-      workbox: { globPatterns: ['**/*.{js,css,html,svg}'] },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg}'],
+        // text recognition files (≈ 11 MB) are not pre-installed: cached on first use, then offline
+        globIgnores: ['ocr/**'],
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        runtimeCaching: [{ urlPattern: /\/ocr\//, handler: 'CacheFirst', options: { cacheName: 'ocr', expiration: { maxEntries: 10 } } }],
+      },
     }),
   ],
   test: { include: ['tests/**/*.test.ts'] },

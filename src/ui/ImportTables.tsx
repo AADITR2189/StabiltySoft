@@ -101,9 +101,9 @@ export function Cell({ c, onEdit, text }: { c: ConvCell | undefined; onEdit: (t:
     );
   }
   return (
-    <td className={`num cell-${c.status}`} title={c.note ?? (differs ? `source: ${c.raw}` : 'same as source')} onClick={() => setEditing(true)}>
+    <td className={`num cell-${c.status}${c.lowConf !== undefined && c.status !== 'edited' ? ' cell-lowconf' : ''}`} title={c.note ?? (differs ? `source: ${c.raw}` : 'same as source')} onClick={() => setEditing(true)}>
       <div className={text ? 'left' : ''}>{c.status === 'error' ? '✗' : c.status === 'empty' ? '—' : shown}</div>
-      {(differs || c.status !== 'ok') && <div className="src">{c.raw || '(empty)'}{c.status === 'filled' ? ' · filled by convention' : c.status === 'edited' ? ' · edited' : c.status === 'error' ? ` · ${c.note}` : ''}</div>}
+      {(differs || c.status !== 'ok' || c.lowConf !== undefined) && <div className="src">{c.raw || '(empty)'}{c.status === 'filled' ? ' · filled by convention' : c.status === 'edited' ? ' · edited' : c.status === 'error' ? ` · ${c.note}` : c.lowConf !== undefined ? ` · OCR ${c.lowConf} %` : ''}</div>}
     </td>
   );
 }

@@ -52,6 +52,35 @@ function smoothness(c: Conversion, k: string, label: string, tol: number): Check
   return { level: 'warn', title: `${label}: value out of line with both neighbours`, detail: `Check source row(s) ${bad.map((i) => c.rows[i].src + 1).join(', ')} for a mistyped digit.`, rows: bad.map((i) => c.rows[i].src) };
 }
 
+/**
+ * A value about 10, 100 or 1000 times its neighbours (or that much smaller): typical of a lost or
+ * extra decimal point (text recognition, typing). Works on the first and last rows too.
+ */
+export function decimalShifts(v: (number | undefined)[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < v.length; i++) {
+    const x = v[i];
+    if (x === undefined || x === 0) continue;
+    // median of up to 3 values on each side: one wrong neighbour cannot move it
+    const nb = [v[i - 3], v[i - 2], v[i - 1], v[i + 1], v[i + 2], v[i + 3]].filter((y): y is number => y !== undefined && y !== 0);
+    if (nb.length < 3) continue;
+    const med = [...nb].sort((a, b) => a - b)[Math.floor(nb.length / 2)];
+    const ratio = Math.abs(x / med);
+    const r = ratio >= 1 ? ratio : 1 / ratio;
+    if ([10, 100, 1000].some((k) => r > k * 0.8 && r < k * 1.25)) out.push(i);
+  }
+  return out;
+}
+
+function decimalCheck(c: Conversion, keys: string[], labels: Record<string, string>): Check[] {
+  const out: Check[] = [];
+  for (const k of keys) {
+    const bad = decimalShifts(col(c, k));
+    if (bad.length) out.push({ level: 'error', title: `${labels[k] ?? k}: value about 10×, 100× or 1000× its neighbours`, detail: `Source row(s) ${bad.map((i) => c.rows[i].src + 1).join(', ')}: a decimal point is probably lost or added. Correct the value.`, rows: bad.map((i) => c.rows[i].src) });
+  }
+  return out;
+}
+
 function within(c: Conversion, k: string, label: string, lo: number, hi: number, why: string): Check {
   const bad = c.rows.filter((r) => { const x = numVal(r.cells[k]); return x !== undefined && (x < lo || x > hi); }).map((r) => r.src);
   return bad.length ? { level: 'warn', title: `${label} outside ${lo.toFixed(2)} … ${hi.toFixed(2)} m (${why})`, detail: `Source row(s) ${bad.map((x) => x + 1).join(', ')}.`, rows: bad } : { level: 'ok', title: `${label} within ${why}` };
@@ -69,9 +98,12 @@ export function checkConversion(kind: DatasetKind, c: Conversion, v: Vessel, opt
   const emptyOpt = c.rows.filter((r) => Object.entries(r.cells).some(([k, x]) => x.status === 'empty' && !req.has(k))).map((r) => r.src);
   if (emptyReq.length) out.push({ level: 'error', title: 'Required cells are empty', detail: `Source row(s) ${emptyReq.map((x) => x + 1).join(', ')}. Type the value, or leave the row out of the range.`, rows: emptyReq });
   if (emptyOpt.length) out.push({ level: 'warn', title: 'Some optional cells are empty', detail: `Source row(s) ${emptyOpt.map((x) => x + 1).join(', ')}.`, rows: emptyOpt });
+  const low = c.rows.filter((r) => [...Object.values(r.cells), ...(r.kn ?? [])].some((x) => x.lowConf !== undefined && x.status !== 'edited'));
+  if (low.length) out.push({ level: 'warn', title: `${low.reduce((n, r) => n + [...Object.values(r.cells), ...(r.kn ?? [])].filter((x) => x.lowConf !== undefined && x.status !== 'edited').length, 0)} value(s) read by text recognition with low confidence (marked)`, detail: `Source row(s) ${low.map((r) => r.src + 1).join(', ')}: compare each marked value with the page image; correct it by clicking.`, rows: low.map((r) => r.src) });
   if (c.rows.length < 2 && kind !== 'OPENINGS' && kind !== 'WEIGHTS') out.push({ level: 'error', title: 'At least 2 rows are needed for interpolation' });
 
   if (kind === 'HYDRO') {
+    out.push(...decimalCheck(c, ['draft', 'displacement', 'kmt', 'tpc', 'mtc', 'kb'], { draft: 'Draft', displacement: 'Displacement', kmt: 'KMT', tpc: 'TPC', mtc: 'MTC', kb: 'KB' }));
     out.push(increasing(c, 'draft', 'Draft'), increasing(c, 'displacement', 'Displacement'));
     // TPC balance: ΔΔ ≈ mean TPC × 100 × Δdraft
     const T = col(c, 'draft'), D = col(c, 'displacement'), tpc = col(c, 'tpc');
@@ -97,6 +129,11 @@ export function checkConversion(kind: DatasetKind, c: Conversion, v: Vessel, opt
     const neg = c.rows.filter((r) => r.kn?.some((x) => typeof x.value === 'number' && x.value < 0)).map((r) => r.src);
     out.push(neg.length ? { level: 'warn', title: 'Negative KN values', detail: `Source row(s) ${neg.map((x) => x + 1).join(', ')}.`, rows: neg } : { level: 'ok', title: 'No negative KN values' });
     if (kn0) {
+      const shifted = new Set<number>();
+      for (let j = 0; j < kn0; j++) decimalShifts(c.rows.map((r) => (typeof r.kn![j].value === 'number' ? (r.kn![j].value as number) : undefined))).forEach((i) => shifted.add(c.rows[i].src));
+      const ds = decimalShifts(col(c, 'displacement')).map((i) => c.rows[i].src);
+      ds.forEach((x) => shifted.add(x));
+      if (shifted.size) out.push({ level: 'error', title: 'Value about 10×, 100× or 1000× its neighbours', detail: `Source row(s) ${[...shifted].map((x) => x + 1).join(', ')}: a decimal point is probably lost or added.`, rows: [...shifted] });
       const bad: number[] = [];
       for (let j = 0; j < kn0; j++) {
         const v2 = c.rows.map((r) => (typeof r.kn![j].value === 'number' ? (r.kn![j].value as number) : undefined));
@@ -106,6 +143,7 @@ export function checkConversion(kind: DatasetKind, c: Conversion, v: Vessel, opt
     }
   }
   if (kind === 'TANK') {
+    out.push(...decimalCheck(c, ['sounding', 'vcg'], { sounding: 'Sounding', vcg: 'VCG' }));
     out.push(increasing(c, 'volume', 'Volume', false));
     if (c.rows.some((r) => r.cells.sounding)) out.push(increasing(c, 'sounding', 'Sounding'));
     const vol = col(c, 'volume');
@@ -126,6 +164,7 @@ export function checkConversion(kind: DatasetKind, c: Conversion, v: Vessel, opt
     const x = smoothness(c, 'vcg', 'VCG', 0.05); if (x) out.push(x);
   }
   if (kind === 'WINDAGE') {
+    out.push(...decimalCheck(c, ['draft', 'area', 'centroidZ'], { draft: 'Draft', area: 'Area', centroidZ: 'Centroid' }));
     out.push(increasing(c, 'draft', 'Draft'));
     const a = col(c, 'area');
     const up = a.findIndex((x, i) => i > 0 && x !== undefined && a[i - 1] !== undefined && x > a[i - 1]!);

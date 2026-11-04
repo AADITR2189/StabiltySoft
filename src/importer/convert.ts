@@ -25,6 +25,8 @@ export interface ConvCell {
   read?: number;
   status: 'ok' | 'empty' | 'error' | 'edited' | 'filled';
   note?: string;
+  /** read by text recognition with low confidence: compare with the source */
+  lowConf?: number;
 }
 
 export interface ConvRow {
@@ -110,7 +112,18 @@ function readNumber(raw: string, m: Mapping, pos: 'X' | 'Y' | 'KN' | undefined):
   return { raw, value: p.value, read: p.value, status: 'ok' };
 }
 
-export function convert(def: DatasetDef, rows: string[][], m: Mapping): Conversion {
+/**
+ * Cells read by text recognition below this confidence (%) are marked. Tested on a booklet page:
+ * confidence is only a hint (about half of the misread values were reported as confident), so the
+ * engineering checks and the row-by-row comparison remain the safety net.
+ */
+export const LOW_CONF = 60;
+
+export function convert(def: DatasetDef, rows: string[][], m: Mapping, conf?: (number | null)[][]): Conversion {
+  const mark = (c: ConvCell, i: number, j: number): ConvCell => {
+    const k = conf?.[i]?.[j];
+    return k !== undefined && k !== null && k < LOW_CONF && c.status !== 'empty' ? { ...c, lowConf: k, note: [c.note, `text recognition ${k} % sure: compare with the source`].filter(Boolean).join('; ') } : c;
+  };
   const out: ConvRow[] = [];
   const skipped: Conversion['skipped'] = [];
   const stats = { rowsInRange: 0, cellsRead: 0, cellsOk: 0, cellsError: 0, digitChecks: 0, digitFailures: 0, positionsConverted: 0 };
@@ -127,12 +140,12 @@ export function convert(def: DatasetDef, rows: string[][], m: Mapping): Conversi
       const j = m.cols[f.key];
       if (j === undefined || j < 0) continue;
       const raw = r[j] ?? '';
-      if (f.type === 'text') { cells[f.key] = { raw, value: raw.trim() || null, status: raw.trim() ? 'ok' : 'empty' }; continue; }
+      if (f.type === 'text') { cells[f.key] = mark({ raw, value: raw.trim() || null, status: raw.trim() ? 'ok' : 'empty' }, i, j); continue; }
       const c = readNumber(raw, m, f.pos);
-      cells[f.key] = c;
+      cells[f.key] = mark(c, i, j);
     }
     const row: ConvRow = { src: i, cells };
-    if (def.angleColumns) row.kn = m.angleCols.map((a) => readNumber(r[a.col] ?? '', m, 'KN'));
+    if (def.angleColumns) row.kn = m.angleCols.map((a) => mark(readNumber(r[a.col] ?? '', m, 'KN'), i, a.col));
     for (const c of [...Object.values(cells), ...(row.kn ?? [])]) {
       if (c.status === 'empty') continue;
       stats.cellsRead++;

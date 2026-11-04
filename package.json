@@ -7,16 +7,21 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "predev": "node scripts/copy-ocr.mjs",
+    "prebuild": "node scripts/copy-ocr.mjs"
   },
   "dependencies": {
+    "@e965/xlsx": "^0.20.3",
+    "@tesseract.js-data/eng": "^1.0.0",
     "exceljs": "^4.4.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.9",
     "jszip": "^3.10.2",
     "pdfjs-dist": "^6.3.289",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
