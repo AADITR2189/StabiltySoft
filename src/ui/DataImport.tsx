@@ -12,6 +12,7 @@ import { ACCEPT, fromPastedText, readSource, type SourceDoc } from '../importer/
 import { newId } from '../store';
 import { KvSection } from './KvImport';
 import { MultiTankSection } from './MultiTankImport';
+import { MultiTrimSection } from './MultiTrimImport';
 import { PdfPage } from './PdfPage';
 import { looksLikeOpeningLines, splitOpeningLines } from '../importer/openingsList';
 import { WindageBookletSection } from './WindageBooklet';
@@ -30,7 +31,8 @@ interface Props {
   openVessel: (id: string) => void;
 }
 
-type Mode = DatasetKind | KvKind | 'TANKS_ALL' | 'WINDAGE_BOOKLET';
+type Mode = DatasetKind | KvKind | 'TANKS_ALL' | 'WINDAGE_BOOKLET' | 'HYDRO_ALL' | 'KN_ALL';
+const SPECIAL: Mode[] = ['TANKS_ALL', 'WINDAGE_BOOKLET', 'HYDRO_ALL', 'KN_ALL'];
 
 const GROUPS: TankGroup[] = ['BALLAST', 'FUEL_OIL', 'DIESEL_OIL', 'LUB_OIL', 'FRESH_WATER', 'MISC'];
 
@@ -38,7 +40,8 @@ export function DataImportScreen(p: Props) {
   const [mode, setMode] = useState<Mode>('PARTICULARS');
   const isMulti = mode === 'TANKS_ALL';
   const isWindBk = mode === 'WINDAGE_BOOKLET';
-  const isKv = mode === 'PARTICULARS' || mode === 'LIGHTSHIP_SUMMARY' || isMulti || isWindBk;
+  const isTrims = mode === 'HYDRO_ALL' || mode === 'KN_ALL';
+  const isKv = mode === 'PARTICULARS' || mode === 'LIGHTSHIP_SUMMARY' || isMulti || isWindBk || isTrims;
   const kind: DatasetKind = isKv ? 'HYDRO' : (mode as DatasetKind);
   const def = datasetDef(kind);
   const target = p.userVessels.find((u) => u.id === p.current.id);
@@ -113,7 +116,7 @@ export function DataImportScreen(p: Props) {
   async function onFile(f: File | undefined) {
     if (!f) return;
     setReading(true); setReadErr(null); setDoc(null); setResult(null);
-    try { const d = await readSource(f); setDoc(d); if (mode !== 'TANKS_ALL' && mode !== 'WINDAGE_BOOKLET') setTableId(pickTable(d, mode)); }
+    try { const d = await readSource(f); setDoc(d); if (!SPECIAL.includes(mode)) setTableId(pickTable(d, mode as DatasetKind | KvKind)); }
     catch (e) { setReadErr(e instanceof Error ? e.message : String(e)); }
     finally { setReading(false); }
   }
@@ -179,9 +182,11 @@ export function DataImportScreen(p: Props) {
         <div className="panel-head"><h2>1 · What to import, and into which vessel</h2></div>
         <div className="form-row">
           <label>Data set
-            <select value={mode} onChange={(e) => { setMode(e.target.value as Mode); setResult(null); if (doc && e.target.value !== 'TANKS_ALL' && e.target.value !== 'WINDAGE_BOOKLET') setTableId(pickTable(doc, e.target.value as DatasetKind | KvKind)); }}>
+            <select value={mode} onChange={(e) => { setMode(e.target.value as Mode); setResult(null); if (doc && !SPECIAL.includes(e.target.value as Mode)) setTableId(pickTable(doc, e.target.value as DatasetKind | KvKind)); }}>
               <option value="PARTICULARS">General particulars (label / value list)</option>
               <option value="LIGHTSHIP_SUMMARY">Lightship: total weight and centres (label / value list)</option>
+              <option value="HYDRO_ALL">Hydrostatics: all trims at once</option>
+              <option value="KN_ALL">Cross curves (KN): all trims at once</option>
               <option value="TANKS_ALL">Tank calibration: all tanks at once</option>
               <option value="WINDAGE_BOOKLET">Windage: from the wind heeling moment tables of the loading conditions (booklet)</option>
               {DATASETS.map((d) => <option key={d.kind} value={d.kind}>{d.label}</option>)}
@@ -208,7 +213,7 @@ export function DataImportScreen(p: Props) {
           </>}
           {!isKv && kind === 'WEIGHTS' && <p className="muted small" style={{ alignSelf: 'end' }}>Added to load case: <b>{p.lc.name}</b></p>}
         </div>
-        <p className="muted small">{isWindBk ? 'Booklets often have no windage table: each loading condition shows the wind heeling moment derivation (parts with area LPA, height HCP above the waterline, lever). With the draft of each condition this gives one windage row per draft. The printed total moment is re-calculated as a check.' : isMulti ? 'Every tank calibration table in the file in one go: the booklet tank pages, an Excel workbook with one sheet per tank, or one long table with a tank-name column. Columns are mapped once; each tank is checked on its own and stored with its own record.' : isKv ? (mode === 'PARTICULARS' ? 'Ship name, IMO, call sign, LBP, breadth, depth, draft, density and bilge keel area are found by their labels (e.g. "LBP ...... 57.400 m"). Fields not in the source keep their present value.' : 'Lightship weight, LCG, TCG and VCG found by their labels (e.g. "Lightship LCG = 0.592 m AFT of MIDSHIP"). Words like aft / fwd of midship and port / starboard are understood.') : def.help}</p>
+        <p className="muted small">{isTrims ? `Every ${mode === 'HYDRO_ALL' ? 'hydrostatic' : 'cross curve (KN)'} table of the file in one go, one per trim: booklet pages with a trim title line ("No Trim", "Trim: aft 0.500/57.400", "Trim fwd 1.000"), one Excel sheet per trim, or one long table with a trim column. Columns are mapped once; each trim is checked and stored with its own record.` : isWindBk ? 'Booklets often have no windage table: each loading condition shows the wind heeling moment derivation (parts with area LPA, height HCP above the waterline, lever). With the draft of each condition this gives one windage row per draft. The printed total moment is re-calculated as a check.' : isMulti ? 'Every tank calibration table in the file in one go: the booklet tank pages, an Excel workbook with one sheet per tank, or one long table with a tank-name column. Columns are mapped once; each tank is checked on its own and stored with its own record.' : isKv ? (mode === 'PARTICULARS' ? 'Ship name, IMO, call sign, LBP, breadth, depth, draft, density and bilge keel area are found by their labels (e.g. "LBP ...... 57.400 m"). Fields not in the source keep their present value.' : 'Lightship weight, LCG, TCG and VCG found by their labels (e.g. "Lightship LCG = 0.592 m AFT of MIDSHIP"). Words like aft / fwd of midship and port / starboard are understood.') : def.help}</p>
         {(isKv || kind !== 'WEIGHTS') && !target && (
           <div className="notice warn-notice">
             <b>{p.current.vessel.name}</b> is a built-in vessel and cannot be changed. Make your own copy to import into, or create a new vessel in Vessel Database.
@@ -236,8 +241,9 @@ export function DataImportScreen(p: Props) {
       </section>
 
       {isMulti && doc && <MultiTankSection key={doc.sha256} doc={doc} vessel={vessel} target={target} save={p.saveUserVessel} />}
+      {isTrims && doc && <MultiTrimSection key={`${doc.sha256}-${mode}`} kind={mode === 'HYDRO_ALL' ? 'HYDRO' : 'KN'} doc={doc} vessel={vessel} target={target} save={p.saveUserVessel} />}
       {isWindBk && doc && <WindageBookletSection key={doc.sha256} doc={doc} vessel={vessel} target={target} save={p.saveUserVessel} />}
-      {isKv && !isMulti && !isWindBk && doc && <KvSection kind={mode as KvKind} doc={doc} tableId={table?.id ?? ''} setTableId={setTableId} vessel={vessel} target={target} save={p.saveUserVessel} />}
+      {isKv && !isMulti && !isWindBk && !isTrims && doc && <KvSection kind={mode as KvKind} doc={doc} tableId={table?.id ?? ''} setTableId={setTableId} vessel={vessel} target={target} save={p.saveUserVessel} />}
 
       {/* 3. table and columns */}
       {!isKv && doc && table && mapping && (
