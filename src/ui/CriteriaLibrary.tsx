@@ -46,7 +46,7 @@ export function CriteriaLibraryScreen({ lib, addCriterion, removeCriterion, save
           <div className="flow-arrow" aria-hidden="true">→</div>
           <div className="flow-box"><strong>2 · Criteria</strong><span>Area, GZ, GM, heel… Moment criteria (heel at equilibrium, residual area, residual arm) use either <em>the group’s combined moment</em> or one chosen moment.</span></div>
           <div className="flow-arrow" aria-hidden="true">→</div>
-          <div className="flow-box"><strong>3 · Stability group</strong><span>Click criteria to include them. Click moments to connect them: the group’s combined moment is their <em>sum</em>, arm = Σ Mᵢ / Δ.</span></div>
+          <div className="flow-box"><strong>3 · Stability group</strong><span>Click criteria to include them. Moments are optional; connect them only for moment criteria: the group’s combined moment is their <em>sum</em>, arm = Σ Mᵢ / Δ.</span></div>
           <div className="flow-arrow" aria-hidden="true">→</div>
           <div className="flow-box"><strong>4 · Load case</strong><span>Tick the group. Stability Criteria then shows the group’s GZ diagram, GZ table (GZ, each arm, total, residual) and every moment table.</span></div>
         </div>
@@ -263,14 +263,13 @@ function GroupBuilder({ all, moments, onSave, editing, onCancel }: {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const toggleM = (id: string) => setPickedM((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
-  const usesGroupMoment = picked.some((id) => {
-    const c = all.find((x) => x.id === id);
-    return c && ['HEEL_MOMENT', 'RESID_AREA', 'RESID_GZMAX'].includes(c.kind) && (c.params?.momentId ?? 'GROUP') === 'GROUP';
-  });
+  const needsGroupMoment = (c: CriterionDef | undefined) => !!c && ['HEEL_MOMENT', 'RESID_AREA', 'RESID_GZMAX'].includes(c.kind) && (c.params?.momentId ?? 'GROUP') === 'GROUP';
+  const needing = picked.map((id) => all.find((x) => x.id === id)).filter(needsGroupMoment) as CriterionDef[];
+  const usesGroupMoment = needing.length > 0;
   const save = () => {
     if (!name.trim()) return setMsg({ ok: false, text: 'Give the group a name.' });
     if (picked.length === 0) return setMsg({ ok: false, text: 'Click at least one criterion to add it to the group.' });
-    if (usesGroupMoment && pickedM.length === 0) return setMsg({ ok: false, text: 'A selected criterion uses the group’s combined moment: connect at least one heeling moment.' });
+    if (usesGroupMoment && pickedM.length === 0) return setMsg({ ok: false, text: `These criteria work on a heeling moment: ${needing.map((c) => `“${c.name}”`).join(', ')}. Connect a heeling moment below, or remove them from the group. All other criteria need no moment.` });
     onSave({
       id: editing?.id ?? `GRP-${newId()}`, name: name.trim(), regulation: reference.trim() || 'User-defined group',
       description: `${picked.length} criteria${pickedM.length ? `, ${pickedM.length} connected heeling moment(s)` : ''}.`,
@@ -297,13 +296,14 @@ function GroupBuilder({ all, moments, onSave, editing, onCancel }: {
             <button key={c.id} type="button" className={`pick ${i >= 0 ? 'on' : ''}`} aria-pressed={i >= 0} onClick={() => toggle(c.id)}>
               {i >= 0 && <span className="pick-n">{i + 1}</span>}
               <span>{c.name}</span>
-              <span className="muted small">{c.regulation ?? 'User-defined'}</span>
+              <span className="muted small">{c.regulation ?? 'User-defined'}{needsGroupMoment(c) ? ' · needs a heeling moment' : ''}</span>
             </button>
           );
         })}
       </div>
-      <p className="small"><strong>Heeling moments connected to this group:</strong> click to connect. The group’s combined heeling moment is the sum of the connected moments.</p>
-      {moments.length === 0 ? <p className="muted small">No moments yet. Create one in “Create heeling moment” above.</p> : (
+      <p className="small"><strong>Heeling moments (optional):</strong> a group of ordinary criteria (areas, GZ, GM, angles…) needs no moment: just save it. Connect moments only for criteria marked “needs a heeling moment”; the group’s combined moment is the sum of the connected moments.</p>
+      {usesGroupMoment && pickedM.length === 0 && <p className="warn-text small">! {needing.length} chosen criterion/criteria need a heeling moment: connect one below, or remove them.</p>}
+      {moments.length === 0 ? <p className="muted small">No moments yet. Only needed for moment criteria: create one in “Create heeling moment” above.</p> : (
         <div className="pick-grid">
           {moments.map((m) => {
             const on = pickedM.includes(m.id);
