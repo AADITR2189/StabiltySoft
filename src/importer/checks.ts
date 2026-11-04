@@ -1,7 +1,7 @@
 // Engineering consistency checks on an imported table. They catch transcription errors that a
 // per-cell check cannot: a swapped digit makes a column jump, a missed row breaks the TPC balance, etc.
 import type { Vessel } from '../engine/types';
-import type { DatasetKind } from './datasets';
+import { datasetDef, type DatasetKind } from './datasets';
 import { numVal, type Conversion } from './convert';
 import { isTotalRow, lightshipTotals } from './apply';
 
@@ -64,8 +64,11 @@ export function checkConversion(kind: DatasetKind, c: Conversion, v: Vessel, opt
   out.push(s.cellsError ? { level: 'error', title: `${s.cellsError} of ${s.cellsRead} cells could not be read as numbers`, detail: 'Fix the column mapping, the decimal separator, or edit the marked cells.' }
     : { level: 'ok', title: `All ${s.cellsRead} cells read; every number re-read digit by digit and matches the source text` });
   out.push({ level: c.rows.length ? 'ok' : 'error', title: `${c.rows.length} data rows + ${c.skipped.length} skipped = ${s.rowsInRange} rows in the selected range`, detail: c.skipped.length ? 'Skipped rows are listed below the table; make sure none of them holds data.' : undefined });
-  const missingReq = c.rows.flatMap((r) => Object.entries(r.cells).filter(([, x]) => x.status === 'empty').map(() => r.src));
-  if (missingReq.length) out.push({ level: 'warn', title: 'Some cells are empty', detail: `Source row(s) ${[...new Set(missingReq)].map((x) => x + 1).join(', ')}.`, rows: missingReq });
+  const req = new Set(datasetDef(kind).fields.filter((f) => f.required).map((f) => f.key));
+  const emptyReq = c.rows.filter((r) => Object.entries(r.cells).some(([k, x]) => x.status === 'empty' && req.has(k))).map((r) => r.src);
+  const emptyOpt = c.rows.filter((r) => Object.entries(r.cells).some(([k, x]) => x.status === 'empty' && !req.has(k))).map((r) => r.src);
+  if (emptyReq.length) out.push({ level: 'error', title: 'Required cells are empty', detail: `Source row(s) ${emptyReq.map((x) => x + 1).join(', ')}. Type the value, or leave the row out of the range.`, rows: emptyReq });
+  if (emptyOpt.length) out.push({ level: 'warn', title: 'Some optional cells are empty', detail: `Source row(s) ${emptyOpt.map((x) => x + 1).join(', ')}.`, rows: emptyOpt });
   if (c.rows.length < 2 && kind !== 'OPENINGS' && kind !== 'WEIGHTS') out.push({ level: 'error', title: 'At least 2 rows are needed for interpolation' });
 
   if (kind === 'HYDRO') {
@@ -118,7 +121,7 @@ export function checkConversion(kind: DatasetKind, c: Conversion, v: Vessel, opt
       out.push(bad.length ? { level: 'warn', title: `Weight does not match volume × density ${opts.density} (± 1 %)`, detail: `Source row(s) ${bad.map((x) => x + 1).join(', ')}.`, rows: bad } : { level: 'ok', title: `Weight = volume × density ${opts.density} on every row` });
     }
     if (!c.rows.some((r) => r.cells.inertia || r.cells.fsm)) out.push({ level: 'warn', title: 'No free-surface column mapped', detail: 'The tank will have no free surface moment (i_T = 0).' });
-    if (L) out.push(within(c, 'lcg', 'LCG', 0, L, 'the ship length'));
+    if (L) out.push(within(c, 'lcg', 'LCG', -0.1 * L, 1.1 * L, 'the ship length (± 10 % beyond the perpendiculars)'));
     if (B) out.push(within(c, 'tcg', 'TCG', -B / 2, B / 2, 'the ship breadth'));
     const x = smoothness(c, 'vcg', 'VCG', 0.05); if (x) out.push(x);
   }

@@ -16,6 +16,7 @@ const SPACES = /[\s   ']/g;
 export function parseNum(raw: string, decimal: Decimal = '.'): ParsedNum | null {
   let s = raw.trim().replace(MINUS, '-');
   if (!s) return null;
+  s = s.replace(/\s*%$/, '');
   let neg = false;
   if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1).trim(); }
   let suffix: ParsedNum['suffix'] = '';
@@ -38,7 +39,7 @@ export function parseNum(raw: string, decimal: Decimal = '.'): ParsedNum | null 
 
 /** Independent re-read: keep only digits, sign and the decimal mark of the raw text and compare with the parsed value. */
 export function digitCheck(raw: string, value: number, decimal: Decimal = '.'): boolean {
-  const t = raw.replace(MINUS, '-');
+  const t = raw.replace(MINUS, '-').replace(/\s*%\s*$/, '');
   const negative = /^\s*\(/.test(t) || /^\s*-/.test(t);
   if (/e/i.test(t.replace(/[afsp]\s*$/i, ''))) return Math.abs(Number(t.replace(/[^\d.eE+-]/g, '')) - Math.abs(value)) <= 1e-12 * Math.max(1, Math.abs(value));
   let digits = '';

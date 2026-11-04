@@ -322,3 +322,9 @@ button.tiny { font-size: 12px; padding: 1px 8px; margin: 2px 4px 2px 0; }
 .file-btn { display: inline-block; padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; font-weight: 600; cursor: pointer; }
 .ghost-file:focus-within .file-btn { outline: 2px solid var(--accent); }
 .db-preview { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.grid.review td.cell-filled { background: color-mix(in srgb, var(--powder) 16%, transparent); }
+.tank-list td input[type=number] { width: 80px; }
+.tank-list td input[type=text] { width: 130px; }
+.tank-list tr.open td { background: var(--surface-2); }
+.tank-detail { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin: 8px 0 12px; }
+.grid.review td .src { white-space: normal; max-width: 170px; margin-left: auto; }

@@ -5,13 +5,15 @@ import type { LoadCase, TankGroup, Vessel } from '../engine/types';
 import type { VesselEntry } from '../data/vessels';
 import type { UserVesselEntry } from '../importer/dbFile';
 import { DATASETS, datasetDef, type DatasetKind } from '../importer/datasets';
-import { autoMapping, convert, editCell, type ConvCell, type Conversion, type Mapping } from '../importer/convert';
+import { autoMapping, convert, editCell, type Conversion, type Mapping } from '../importer/convert';
 import { checkConversion } from '../importer/checks';
 import { applyToVessel, applyWeights, compareRows, datasetKey, expectedRows, SORTED, storedRows, type ApplyOptions, type Provenance } from '../importer/apply';
 import { ACCEPT, fromPastedText, readSource, type SourceDoc } from '../importer/sources';
 import { newId } from '../store';
 import { KvSection } from './KvImport';
+import { MultiTankSection } from './MultiTankImport';
 import { PdfPage } from './PdfPage';
+import { ReviewTable, SourceGrid } from './ImportTables';
 import type { KvKind } from '../importer/keyValue';
 
 interface Props {
@@ -26,11 +28,14 @@ interface Props {
   openVessel: (id: string) => void;
 }
 
+type Mode = DatasetKind | KvKind | 'TANKS_ALL';
+
 const GROUPS: TankGroup[] = ['BALLAST', 'FUEL_OIL', 'DIESEL_OIL', 'LUB_OIL', 'FRESH_WATER', 'MISC'];
 
 export function DataImportScreen(p: Props) {
-  const [mode, setMode] = useState<DatasetKind | KvKind>('PARTICULARS');
-  const isKv = mode === 'PARTICULARS' || mode === 'LIGHTSHIP_SUMMARY';
+  const [mode, setMode] = useState<Mode>('PARTICULARS');
+  const isMulti = mode === 'TANKS_ALL';
+  const isKv = mode === 'PARTICULARS' || mode === 'LIGHTSHIP_SUMMARY' || isMulti;
   const kind: DatasetKind = isKv ? 'HYDRO' : (mode as DatasetKind);
   const def = datasetDef(kind);
   const target = p.userVessels.find((u) => u.id === p.current.id);
@@ -100,7 +105,7 @@ export function DataImportScreen(p: Props) {
   async function onFile(f: File | undefined) {
     if (!f) return;
     setReading(true); setReadErr(null); setDoc(null); setResult(null);
-    try { const d = await readSource(f); setDoc(d); setTableId(pickTable(d, mode)); }
+    try { const d = await readSource(f); setDoc(d); if (mode !== 'TANKS_ALL') setTableId(pickTable(d, mode)); }
     catch (e) { setReadErr(e instanceof Error ? e.message : String(e)); }
     finally { setReading(false); }
   }
@@ -166,9 +171,10 @@ export function DataImportScreen(p: Props) {
         <div className="panel-head"><h2>1 · What to import, and into which vessel</h2></div>
         <div className="form-row">
           <label>Data set
-            <select value={mode} onChange={(e) => { setMode(e.target.value as DatasetKind | KvKind); setResult(null); if (doc) setTableId(pickTable(doc, e.target.value as DatasetKind | KvKind)); }}>
+            <select value={mode} onChange={(e) => { setMode(e.target.value as Mode); setResult(null); if (doc && e.target.value !== 'TANKS_ALL') setTableId(pickTable(doc, e.target.value as DatasetKind | KvKind)); }}>
               <option value="PARTICULARS">General particulars (label / value list)</option>
               <option value="LIGHTSHIP_SUMMARY">Lightship: total weight and centres (label / value list)</option>
+              <option value="TANKS_ALL">Tank calibration: all tanks at once</option>
               {DATASETS.map((d) => <option key={d.kind} value={d.kind}>{d.label}</option>)}
             </select>
           </label>
@@ -193,7 +199,7 @@ export function DataImportScreen(p: Props) {
           </>}
           {!isKv && kind === 'WEIGHTS' && <p className="muted small" style={{ alignSelf: 'end' }}>Added to load case: <b>{p.lc.name}</b></p>}
         </div>
-        <p className="muted small">{isKv ? (mode === 'PARTICULARS' ? 'Ship name, IMO, call sign, LBP, breadth, depth, draft, density and bilge keel area are found by their labels (e.g. "LBP ...... 57.400 m"). Fields not in the source keep their present value.' : 'Lightship weight, LCG, TCG and VCG found by their labels (e.g. "Lightship LCG = 0.592 m AFT of MIDSHIP"). Words like aft / fwd of midship and port / starboard are understood.') : def.help}</p>
+        <p className="muted small">{isMulti ? 'Every tank calibration table in the file in one go: the booklet tank pages, an Excel workbook with one sheet per tank, or one long table with a tank-name column. Columns are mapped once; each tank is checked on its own and stored with its own record.' : isKv ? (mode === 'PARTICULARS' ? 'Ship name, IMO, call sign, LBP, breadth, depth, draft, density and bilge keel area are found by their labels (e.g. "LBP ...... 57.400 m"). Fields not in the source keep their present value.' : 'Lightship weight, LCG, TCG and VCG found by their labels (e.g. "Lightship LCG = 0.592 m AFT of MIDSHIP"). Words like aft / fwd of midship and port / starboard are understood.') : def.help}</p>
         {(isKv || kind !== 'WEIGHTS') && !target && (
           <div className="notice warn-notice">
             <b>{p.current.vessel.name}</b> is a built-in vessel and cannot be changed. Make your own copy to import into, or create a new vessel in Vessel Database.
@@ -220,7 +226,8 @@ export function DataImportScreen(p: Props) {
         {doc && doc.tables.length === 0 && <div className="error-box">No readable text or tables found in this file.</div>}
       </section>
 
-      {isKv && doc && <KvSection kind={mode as KvKind} doc={doc} tableId={table?.id ?? ''} setTableId={setTableId} vessel={vessel} target={target} save={p.saveUserVessel} />}
+      {isMulti && doc && <MultiTankSection key={doc.sha256} doc={doc} vessel={vessel} target={target} save={p.saveUserVessel} />}
+      {isKv && !isMulti && doc && <KvSection kind={mode as KvKind} doc={doc} tableId={table?.id ?? ''} setTableId={setTableId} vessel={vessel} target={target} save={p.saveUserVessel} />}
 
       {/* 3. table and columns */}
       {!isKv && doc && table && mapping && (
@@ -333,108 +340,3 @@ function pickTable(d: SourceDoc, kind: DatasetKind | KvKind): string {
 }
 
 const preview = (rows: string[][]) => rows.slice(1, 8).flat().filter((c) => /[a-z]{3}/i.test(c)).slice(0, 4).join(' ').slice(0, 50);
-
-function SourceGrid({ rows, mapping, def, onMap }: { rows: string[][]; mapping: Mapping; def: ReturnType<typeof datasetDef>; onMap: (m: Partial<Mapping>) => void }) {
-  const width = Math.max(1, ...rows.map((r) => r.length));
-  const fieldOf = (j: number) => Object.entries(mapping.cols).find(([, c]) => c === j)?.[0] ?? '';
-  const angleOf = (j: number) => mapping.angleCols.find((a) => a.col === j);
-  const setCol = (j: number, val: string) => {
-    const cols = { ...mapping.cols };
-    for (const k of Object.keys(cols)) if (cols[k] === j) cols[k] = -1;
-    let angleCols = mapping.angleCols.filter((a) => a.col !== j);
-    if (val.startsWith('angle:')) angleCols = [...angleCols, { col: j, angle: Number(val.slice(6)) }].sort((a, b) => a.col - b.col);
-    else if (val) { for (const k of Object.keys(cols)) if (k === val) cols[k] = -1; cols[val] = j; }
-    onMap({ cols, angleCols });
-  };
-  return (
-    <div className="table-wrap tall source-grid">
-      <table className="grid">
-        <thead>
-          <tr>
-            <th>Row</th>
-            {Array.from({ length: width }, (_, j) => {
-              const a = angleOf(j);
-              return (
-                <th key={j}>
-                  <select aria-label={`Column ${j + 1}`} value={a ? `angle:${a.angle}` : fieldOf(j)} onChange={(e) => {
-                    if (e.target.value === 'angle:?') { const v = prompt('Heel angle of this column (degrees)'); if (v && Number.isFinite(Number(v))) setCol(j, `angle:${Number(v)}`); return; }
-                    setCol(j, e.target.value);
-                  }}>
-                    <option value="">— not used —</option>
-                    {def.fields.map((f) => <option key={f.key} value={f.key}>{f.label}{f.unit ? ` (${f.unit})` : ''}{f.required ? ' *' : ''}</option>)}
-                    {def.angleColumns && a && <option value={`angle:${a.angle}`}>KN at {a.angle}°</option>}
-                    {def.angleColumns && <option value="angle:?">KN at angle…</option>}
-                  </select>
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => {
-            const inRange = i >= mapping.firstRow && i <= mapping.lastRow;
-            return (
-              <tr key={i} className={inRange ? 'in-range' : 'out-range'}>
-                <td className="num muted">{i + 1}</td>
-                {Array.from({ length: width }, (_, j) => <td key={j} className={fieldOf(j) || angleOf(j) ? 'mapped' : ''}>{r[j] ?? ''}</td>)}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function ReviewTable({ conv, def, mapping, ticked, flagged, onTick, onEdit }: {
-  conv: Conversion; def: ReturnType<typeof datasetDef>; mapping: Mapping; ticked: Set<number>; flagged: Set<number>;
-  onTick: (src: number) => void; onEdit: (src: number, key: string | number, text: string) => void;
-}) {
-  const fields = def.fields.filter((f) => (mapping.cols[f.key] ?? -1) >= 0);
-  return (
-    <div className="table-wrap tall">
-      <table className="grid review">
-        <thead>
-          <tr>
-            <th>✓</th><th>Src row</th>
-            {fields.map((f) => <th key={f.key} className="num">{f.label}{f.unit && <div className="muted small">{f.unit}{f.pos === 'X' ? ' from AP' : f.pos === 'Y' ? ' + stbd' : ''}</div>}{f.checkOnly && <div className="muted small">check only</div>}</th>)}
-            {mapping.angleCols.map((a) => <th key={a.col} className="num">KN {a.angle}°<div className="muted small">m</div></th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {conv.rows.map((r) => (
-            <tr key={r.src} className={flagged.has(r.src) ? 'row-flag' : ''}>
-              <td><input type="checkbox" aria-label={`Row ${r.src + 1} checked`} checked={ticked.has(r.src)} onChange={() => onTick(r.src)} /></td>
-              <td className="num muted">{r.src + 1}</td>
-              {fields.map((f) => <Cell key={f.key} c={r.cells[f.key]} onEdit={(t) => onEdit(r.src, f.key, t)} text={f.type === 'text'} />)}
-              {(r.kn ?? []).map((c, j) => <Cell key={j} c={c} onEdit={(t) => onEdit(r.src, j, t)} />)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function Cell({ c, onEdit, text }: { c: ConvCell | undefined; onEdit: (t: string) => void; text?: boolean }) {
-  const [editing, setEditing] = useState(false);
-  if (!c) return <td />;
-  const shown = c.value === null ? '' : typeof c.value === 'number' ? fmtNum(c.value) : c.value;
-  const differs = c.raw.trim() !== shown;
-  if (editing) {
-    return (
-      <td className="num">
-        <input autoFocus defaultValue={shown} style={{ width: 90 }} onBlur={(e) => { setEditing(false); if (e.target.value !== shown) onEdit(e.target.value); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(false); }} />
-      </td>
-    );
-  }
-  return (
-    <td className={`num cell-${c.status}`} title={c.note ?? (differs ? `source: ${c.raw}` : 'same as source')} onClick={() => setEditing(true)}>
-      <div className={text ? 'left' : ''}>{c.status === 'error' ? '✗' : c.status === 'empty' ? '—' : shown}</div>
-      {(differs || c.status !== 'ok') && <div className="src">{c.raw || '(empty)'}{c.status === 'edited' ? ' · edited' : c.status === 'error' ? ` · ${c.note}` : ''}</div>}
-    </td>
-  );
-}
-
-const fmtNum = (v: number) => String(Math.round(v * 1e9) / 1e9);

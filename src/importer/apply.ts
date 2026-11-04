@@ -20,6 +20,8 @@ export interface Provenance {
   rows: number;
   values: number;
   editedCells: number;
+  /** blanks filled by booklet convention (empty-tank centres, FSM at 0 % / 100 %) */
+  filledCells?: number;
   checks: { errors: number; warnings: number };
   storedCheck: string;
   verifiedBy: string;

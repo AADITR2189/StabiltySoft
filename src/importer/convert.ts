@@ -23,7 +23,7 @@ export interface ConvCell {
   value: number | string | null;
   /** the number exactly as printed (before reference / sign conversion) */
   read?: number;
-  status: 'ok' | 'empty' | 'error' | 'edited';
+  status: 'ok' | 'empty' | 'error' | 'edited' | 'filled';
   note?: string;
 }
 

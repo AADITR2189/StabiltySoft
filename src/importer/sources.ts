@@ -123,7 +123,7 @@ export function pdfItemsToRows(items: PdfTextItem[]): string[][] {
     if (last && Math.abs(last[0].y - t.y) <= 2.5) last.push(t); else lines.push([t]);
   }
   lines.forEach((l) => l.sort((a, b) => a.x - b.x));
-  const numeric = (s: string) => /^[-−(]?[\d.,]+[)]?[afspAFSP]?$/.test(s) && /\d/.test(s);
+  const numeric = (s: string) => /^[-−(]?[\d.,]+[)]?[afspAFSP%]?$/.test(s) && /\d/.test(s);
   const dataLines = lines.filter((l) => l.length >= 2 && l.filter((t) => numeric(t.str)).length >= l.length * 0.6);
   if (!dataLines.length) return lines.map((l) => [l.map((t) => t.str).join(' ')]);
   const counts = new Map<number, number>();
