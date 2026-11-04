@@ -121,9 +121,10 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
       return { heel: a, kn: k, kgSin, tcgCos, gz: k - kgSin - tcgCos };
     });
   const gzCurve: { heel: number; gz: number }[] = [];
-  const cFrom = 0; // the chart always starts upright so the criterion areas are drawn complete
-  const cTo = lc.gzRange ? Math.min(Math.max(lc.gzRange.to, cFrom), gzEnd) : gzEnd;
-  const cStep = lc.gzRange ? Math.min(1, Math.max(0.1, lc.gzRange.step)) : 1;
+  // the curve always covers 0° … end of the KN table; each chart limits its own x-axis to its range
+  const cFrom = 0, cTo = gzEnd;
+  const allSteps = [lc.gzRange, ...Object.values(lc.gzRanges ?? {})].filter((x): x is NonNullable<typeof x> => !!x).map((x) => x.step);
+  const cStep = Math.min(1, Math.max(0.1, ...(allSteps.length ? [Math.min(...allSteps)] : [1])));
   for (let a = cFrom; a <= cTo + 1e-9; a += cStep) gzCurve.push({ heel: Math.round(a * 1e6) / 1e6, gz: gzS(a) });
   if (gzCurve.length && gzCurve[gzCurve.length - 1].heel < cTo - 1e-9) gzCurve.push({ heel: cTo, gz: gzS(cTo) });
 
@@ -264,8 +265,10 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     }
     return combinedMoment(currentGroupMomentIds, `GROUP:${currentGroupKey}`);
   }
+  /** range of the GZ table being built: the group's own range, else the load case range */
+  let currentRange = lc.gzRange;
   function tableAngles(): number[] {
-    return rangeAngles(lc.gzRange, gzEnd, () => {
+    return rangeAngles(currentRange, gzEnd, () => {
       const set = new Set<number>(kn.angles.filter((a) => a <= gzEnd));
       for (let a = 0; a <= gzEnd + 1e-9; a += 5) set.add(a);
       return [...set].sort((a, b) => a - b);
@@ -838,6 +841,8 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
     let error: string | undefined;
     currentGroupMomentIds = (g.momentIds ?? []).filter((id) => (library.moments ?? []).some((m) => m.id === id));
     currentGroupKey = g.id;
+    currentRange = lc.gzRanges?.[g.id] ?? lc.gzRange;
+    if (lc.gzRanges?.[g.id] && lc.gzRanges[g.id].to > gzEnd + 1e-9 && !warnings.some((w) => w.code === 'GZ_RANGE_CLIPPED' && w.message.startsWith(g.name))) warnings.push({ code: 'GZ_RANGE_CLIPPED', message: `${g.name}: GZ table range limited to ${gzEnd}°, the largest angle of the KN table.` });
     if ((g.momentIds ?? []).length !== currentGroupMomentIds.length) error = 'A heeling moment connected to this group no longer exists.';
     for (const cid of g.criterionIds) {
       const def = allCriteria.find((c) => c.id === cid);
@@ -910,6 +915,13 @@ export function calculate(vessel: Vessel, lc: LoadCase, library: CriteriaLibrary
           arms.push(um.arm);
         }
       }
+    }
+    // moment tables follow this group's angles (a moment may have been tabulated for another group)
+    for (let i = 0; i < moments.length; i++) {
+      const m = moments[i];
+      if (m.rows.length === angles.length && m.rows.every((row, k) => row.heel === angles[k])) continue;
+      const armOnly = m.rows.length > 0 && m.rows.every((row) => row.moment === null);
+      moments[i] = { ...m, rows: angles.map((a) => ({ heel: a, moment: armOnly ? null : arms[i](a) * disp, arm: arms[i](a) })) };
     }
     const table: GroupTableRow[] = angles.map((a) => {
       const k = knOf(a), kgSin = kgFluid * Math.sin(a * DEG), tcgCos = tcgS * Math.cos(a * DEG);

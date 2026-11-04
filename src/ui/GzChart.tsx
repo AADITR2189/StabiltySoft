@@ -13,10 +13,12 @@ type Pt = { heel: number; gz: number };
 
 const AREA_CLASSES = ['area-1', 'area-2', 'area-3', 'area-4'];
 
-export function GzChart({ r, mode = 'plain', criteria = [] }: { r: Results; mode?: Mode; criteria?: CriterionResult[] }) {
+export function GzChart({ r, mode = 'plain', criteria = [], toAngle }: { r: Results; mode?: Mode; criteria?: CriterionResult[]; /** right end of the heel axis (the group's range) */ toAngle?: number }) {
   const W = 800, H = 380, m = { l: 56, r: 24, t: 26, b: 44 };
-  const pts = r.gzCurve;
-  const xMax = pts[pts.length - 1]?.heel ?? 90;
+  const full = r.gzCurve;
+  const end = full[full.length - 1]?.heel ?? 90;
+  const xMax = toAngle !== undefined && toAngle > 0 ? Math.min(end, toAngle) : end;
+  const pts = full.filter((p) => p.heel <= xMax + 1e-9);
   const w = mode === 'weather' ? r.weather : null;
   const xMin = w ? Math.min(-10, Math.floor((w.thetaR - 5) / 10) * 10) : 0;
   const tcgS = r.side * r.tcg;
@@ -24,7 +26,7 @@ export function GzChart({ r, mode = 'plain', criteria = [] }: { r: Results; mode
   // GZ for negative angles from symmetry: GZ(−φ) = −GZ(φ) − 2·TCG·cos φ
   const neg: Pt[] = [];
   for (let a = xMin; a < 0; a++) {
-    const p = pts[-a];
+    const p = full.find((q) => Math.abs(q.heel + a) < 1e-6);
     if (p) neg.push({ heel: a, gz: -p.gz - 2 * tcgS * Math.cos((a * Math.PI) / 180) });
   }
   const curve: Pt[] = [...neg, ...pts];

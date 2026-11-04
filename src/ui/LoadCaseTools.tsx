@@ -69,21 +69,33 @@ export function OpLimitsSummary({ r }: { r: Results }) {
   );
 }
 
-export function GzRangeControl({ lc, onChange }: { lc: LoadCase; onChange: (lc: LoadCase) => void }) {
-  const r = lc.gzRange;
-  const [from, setFrom] = useState(r?.from ?? 0);
-  const [to, setTo] = useState(r?.to ?? 90);
-  const [step, setStep] = useState(r?.step ?? 5);
+/** GZ table range for the whole load case (default) or for one stability group. */
+export function GzRangeControl({ lc, onChange, groupId, groupName }: { lc: LoadCase; onChange: (lc: LoadCase) => void; groupId?: string; groupName?: string }) {
+  const own = groupId ? lc.gzRanges?.[groupId] : lc.gzRange;
+  const shown = own ?? (groupId ? lc.gzRange : undefined);
+  const [from, setFrom] = useState(shown?.from ?? 0);
+  const [to, setTo] = useState(shown?.to ?? 90);
+  const [step, setStep] = useState(shown?.step ?? 5);
   const ok = step >= 0.1 && to > from && from >= 0;
+  const apply = (rng: LoadCase['gzRange']) => {
+    if (!groupId) return onChange({ ...lc, gzRange: rng });
+    const next = { ...(lc.gzRanges ?? {}) };
+    if (rng) next[groupId] = rng; else delete next[groupId];
+    onChange({ ...lc, gzRanges: Object.keys(next).length ? next : undefined });
+  };
+  const desc = (x?: LoadCase['gzRange']) => (x ? `${x.from}–${x.to}° every ${x.step}°` : 'standard: KN angles + every 5°');
   return (
     <div className="form-row gz-range" style={{ alignItems: 'end' }}>
-      <span className="muted small" style={{ alignSelf: 'center' }}>GZ tables and chart:</span>
-      <label>From °<input type="number" step="any" style={{ width: 70 }} value={from} onChange={(e) => setFrom(Number(e.target.value))} aria-label="GZ range from" /></label>
-      <label>To °<input type="number" step="any" style={{ width: 70 }} value={to} onChange={(e) => setTo(Number(e.target.value))} aria-label="GZ range to" /></label>
-      <label>Step °<input type="number" step="any" min={0.1} style={{ width: 70 }} value={step} onChange={(e) => setStep(Number(e.target.value))} aria-label="GZ range step" /></label>
-      <button className="ghost" disabled={!ok} onClick={() => onChange({ ...lc, gzRange: { from, to, step } })}>Apply</button>
-      {r && <button className="ghost" onClick={() => { setFrom(0); setTo(90); setStep(5); onChange({ ...lc, gzRange: undefined }); }}>Reset to standard</button>}
-      <span className="muted small" style={{ alignSelf: 'center' }}>{r ? `now ${r.from}–${r.to}° every ${r.step}°` : 'standard: KN angles + every 5°'}. The chart always starts at 0° so the criterion areas stay complete; criteria always use the full curve.</span>
+      <span className="muted small" style={{ alignSelf: 'center' }}>{groupId ? 'GZ table of this group:' : 'GZ tables, default for all groups:'}</span>
+      <label>From °<input type="number" step="any" style={{ width: 70 }} value={from} onChange={(e) => setFrom(Number(e.target.value))} aria-label={`GZ range from${groupName ? ` (${groupName})` : ''}`} /></label>
+      <label>To °<input type="number" step="any" style={{ width: 70 }} value={to} onChange={(e) => setTo(Number(e.target.value))} aria-label={`GZ range to${groupName ? ` (${groupName})` : ''}`} /></label>
+      <label>Step °<input type="number" step="any" min={0.1} style={{ width: 70 }} value={step} onChange={(e) => setStep(Number(e.target.value))} aria-label={`GZ range step${groupName ? ` (${groupName})` : ''}`} /></label>
+      <button className="ghost" disabled={!ok} onClick={() => apply({ from, to, step })}>Apply{groupId ? ' to this group' : ''}</button>
+      {own && <button className="ghost" onClick={() => { const d = groupId ? lc.gzRange : undefined; setFrom(d?.from ?? 0); setTo(d?.to ?? 90); setStep(d?.step ?? 5); apply(undefined); }}>{groupId ? 'Use the load case default' : 'Reset to standard'}</button>}
+      <span className="muted small" style={{ alignSelf: 'center' }}>
+        {groupId ? (own ? `own range: ${desc(own)}` : `uses the default (${desc(lc.gzRange)})`) : `now ${desc(lc.gzRange)}`}.
+        {' '}The chart starts at 0° and ends at “To”; criteria always use the full curve.
+      </span>
     </div>
   );
 }

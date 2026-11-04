@@ -160,6 +160,8 @@ export interface LoadCase {
   gzMaxAngle?: number; // default 90
   /** Angles shown in the GZ tables and chart (criteria always use the full curve). */
   gzRange?: import('./opLimits').GzRange;
+  /** Own GZ table range per stability group (group id → range); groups without one use gzRange. */
+  gzRanges?: Record<string, import('./opLimits').GzRange>;
   /** Operational limits, each with its own tick (unticked = not checked). */
   opLimits?: import('./opLimits').OpLimits;
   /** Set when the load case was generated from another one (e.g. arrival from departure). */

@@ -175,7 +175,7 @@ export function Criteria({ r, lc, onChange }: { r: Results; lc: LoadCase; onChan
         {r.groups.length === 0 && <span className="fail-text">No stability group is selected for this load case. Select groups in the Load Case screen.</span>}
       </section>
       <OpLimitsSummary r={r} />
-      <section className="panel"><GzRangeControl key={lc.id} lc={lc} onChange={onChange} /></section>
+      <section className="panel"><GzRangeControl key={`${lc.id}-${JSON.stringify(lc.gzRange ?? null)}`} lc={lc} onChange={onChange} /></section>
       {r.groups.map((g) => <GroupSection key={g.id} g={g} r={r} lc={lc} onChange={onChange} />)}
       {r.warnings.length > 0 && (
         <section className="panel">
@@ -227,7 +227,8 @@ function GroupSection({ g, r, lc, onChange }: { g: CriteriaGroupResult; r: Resul
             {g.chart === 'CRANE' && <><i className="l-wind" />Wind lever during lift <i className="l-2" />Residual area to 20° <i className="l-b" />ARL (to φ2) <i className="l-ref" />φ1, φ2, deck edge</>}
             <i className="l-flood" />Flooding angle
           </div>
-          <div ref={chartRef}><GzChart r={r} mode={g.chart === 'GENERAL' ? 'general' : g.chart === 'WEATHER' ? 'weather' : g.chart === 'FIFI' ? 'fifi' : 'crane'} criteria={g.criteria} /></div>
+          <GzRangeControl key={`${lc.id}-${g.id}-${JSON.stringify(lc.gzRanges?.[g.id] ?? lc.gzRange ?? null)}`} lc={lc} onChange={onChange} groupId={g.id} groupName={g.name} />
+          <div ref={chartRef}><GzChart r={r} mode={g.chart === 'GENERAL' ? 'general' : g.chart === 'WEATHER' ? 'weather' : g.chart === 'FIFI' ? 'fifi' : 'crane'} criteria={g.criteria} toAngle={(lc.gzRanges?.[g.id] ?? lc.gzRange)?.to} /></div>
           <div className="form-row export-row">
             <span className="muted small">Export:</span>
             <button className="ghost tiny" onClick={() => run('png')}>⬇ Chart PNG</button>

@@ -15,8 +15,8 @@ describe('GZ angle range and step', () => {
   it('table and chart follow the range; criteria do not change', () => {
     const r = calculate(v, { ...dep, gzRange: { from: 10, to: 40, step: 2.5 } });
     expect(r.gzTable.map((x) => x.heel)).toEqual([10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35, 37.5, 40]);
-    expect(r.gzCurve[0].heel).toBe(0); // chart starts upright (areas complete)
-    expect(r.gzCurve[r.gzCurve.length - 1].heel).toBe(40);
+    expect(r.gzCurve[0].heel).toBe(0); // chart starts upright (areas complete); each chart ends at its range
+    expect(r.gzCurve[r.gzCurve.length - 1].heel).toBe(60); // full curve; the chart cuts it at its own "to"
     expect(r.groups[0].table.map((x) => x.heel)[1]).toBe(12.5);
     expect(r.groups.map((g) => g.criteria.map((c) => c.actual))).toEqual(base.groups.map((g) => g.criteria.map((c) => c.actual)));
     expect(r.overallPass).toBe(base.overallPass);
@@ -94,5 +94,25 @@ describe('load case file', () => {
     expect((await readLoadCaseFile(text.replace('"seaDensity": 1.025', '"seaDensity": 1.000'), v, id)).errors[0]).toMatch(/Checksum/);
     const r = await readLoadCaseFile(text, { ...v, name: 'OTHER', imo: '1234567' }, id);
     expect(r.warnings[0]).toMatch(/saved for MARSOL SPLENDOR/);
+  });
+});
+
+describe('GZ range per stability group', () => {
+  const base = calculate(v, dep);
+  const [g1, g2] = base.groups;
+  it('each group has its own angles; others keep the default; criteria unchanged', () => {
+    const r = calculate(v, { ...dep, gzRange: { from: 0, to: 60, step: 10 }, gzRanges: { [g1.id]: { from: 0, to: 30, step: 1 } } });
+    const t1 = r.groups.find((g) => g.id === g1.id)!.table.map((x) => x.heel);
+    const t2 = r.groups.find((g) => g.id === g2.id)!.table.map((x) => x.heel);
+    expect(t1.length).toBe(31);
+    expect(t1[30]).toBe(30);
+    expect(t2).toEqual([0, 10, 20, 30, 40, 50, 60]);
+    expect(r.groups.map((g) => g.criteria.map((c) => c.actual))).toEqual(base.groups.map((g) => g.criteria.map((c) => c.actual)));
+  });
+  it('moment tables follow their group\'s angles', () => {
+    const wg = base.groups.find((g) => g.moments.length > 0)!;
+    const r = calculate(v, { ...dep, gzRanges: { [wg.id]: { from: 0, to: 20, step: 4 } } });
+    const g = r.groups.find((x) => x.id === wg.id)!;
+    for (const m of g.moments) expect(m.rows.map((x) => x.heel)).toEqual([0, 4, 8, 12, 16, 20]);
   });
 });
