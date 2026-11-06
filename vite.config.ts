@@ -9,19 +9,31 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['icon.svg'],
+      injectRegister: false, // registered by the app (UpdatePrompt) so it can show update notices
+      includeAssets: ['icon.svg', 'apple-touch-icon.png'],
       manifest: {
+        id: './',
         name: 'StabilitySoft — Vessel Stability',
         short_name: 'StabilitySoft',
-        description: 'Intact stability calculations (IMO IS Code 2008), offline-capable.',
+        description: 'Vessel intact stability: loading conditions, IMO IS Code 2008 and class criteria, GZ curves, reports. Works offline.',
+        lang: 'en',
         theme_color: '#16191C',
         background_color: '#16191C',
         display: 'standalone',
-        start_url: '.',
-        icons: [{ src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
+        orientation: 'any',
+        start_url: './',
+        scope: './',
+        categories: ['productivity', 'utilities', 'business'],
+        icons: [
+          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+        ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+        navigateFallback: 'index.html',
         // text recognition files (≈ 11 MB) are not pre-installed: cached on first use, then offline
         globIgnores: ['ocr/**'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,

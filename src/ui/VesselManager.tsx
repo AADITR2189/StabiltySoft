@@ -4,10 +4,10 @@ import { useRef, useState } from 'react';
 import type { Vessel } from '../engine/types';
 import type { VesselEntry } from '../data/vessels';
 import { DEFAULT_GROUP_IDS } from '../engine/criteriaGroups';
-import { buildDbFile, mergeDb, readDbFile, summarize, type DbData, type DbPreview, type UserVesselEntry } from '../importer/dbFile';
+import { mergeDb, readDbFile, summarize, type DbData, type DbPreview, type UserVesselEntry } from '../importer/dbFile';
 import { missingVerification, newId } from '../store';
-import { saveFile } from '../report/save';
 import { TankTypesEditor } from './TankTypesEditor';
+import { saveDatabaseFile, StoragePanel } from './AppShell';
 
 interface Props {
   entries: VesselEntry[];
@@ -79,6 +79,7 @@ export function VesselManager(p: Props) {
       {mine && <Provenances u={mine} />}
 
       <DatabaseFile {...p} />
+      <StoragePanel />
     </div>
   );
 }
@@ -266,10 +267,8 @@ function DatabaseFile(p: Props) {
   async function save() {
     setBusy(true); setMsg(null);
     try {
-      const text = await buildDbFile(p.dbData());
-      const name = `StabilitySoft_database_${new Date().toISOString().slice(0, 10)}.json`;
-      const out = await saveFile(name, new Blob([text], { type: 'application/json' }));
-      setMsg(out === 'saved' ? { ok: true, text: `${name} (${Math.round(text.length / 1024)} KB) saved.` } : { ok: false, text: out === 'declined' ? 'Save cancelled.' : 'Saving files is not available here.' });
+      const text = await saveDatabaseFile(p.dbData());
+      setMsg({ ok: /saved\.$/.test(text), text });
     } catch (e) { setMsg({ ok: false, text: String(e instanceof Error ? e.message : e) }); }
     finally { setBusy(false); }
   }

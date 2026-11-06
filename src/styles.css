@@ -50,8 +50,8 @@ input.wide { width: 100%; min-width: 180px; }
 .app {
   display: grid;
   grid-template-columns: 220px 1fr;
-  grid-template-rows: 48px 1fr 28px;
-  grid-template-areas: 'top top' 'nav main' 'status status';
+  grid-template-rows: 48px auto 1fr 28px;
+  grid-template-areas: 'top top' 'banner banner' 'nav main' 'status status';
   height: 100%;
 }
 .topbar {
@@ -357,3 +357,12 @@ button.tiny { font-size: 12px; padding: 1px 8px; margin: 2px 4px 2px 0; }
 .export-row { gap: 8px; align-items: center; margin-top: 4px; }
 .gz-range label { font-size: 12px; }
 .grid.review td.cell-lowconf { box-shadow: inset 0 0 0 2px var(--warn); }
+/* app shell */
+.boot { display: grid; place-items: center; height: 100%; color: var(--muted); font-size: 15px; }
+.banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 14px; background: color-mix(in srgb, var(--warn) 14%, var(--surface)); border-bottom: 1px solid var(--warn); font-size: 13px; }
+.banner-fail { background: color-mix(in srgb, var(--fail) 18%, var(--surface)); border-bottom-color: var(--fail); }
+.install { position: relative; display: inline-flex; align-items: center; gap: 8px; }
+.install-hint { position: absolute; top: 110%; right: 0; width: 320px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; z-index: 20; }
+.update-toast { position: fixed; right: 16px; bottom: 44px; background: var(--surface-2); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; display: flex; gap: 10px; align-items: center; z-index: 30; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
+
+.banner-slot { grid-area: banner; }

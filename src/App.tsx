@@ -9,6 +9,8 @@ import type { DbData } from './importer/dbFile';
 import { DataImportScreen } from './ui/DataImport';
 import { VesselManager } from './ui/VesselManager';
 import { ImportedDataScreen } from './ui/ImportedData';
+import { BackupBanner, InstallButton, StorageBadge } from './ui/AppShell';
+import { UpdatePrompt } from './ui/UpdatePrompt';
 import { CriteriaLibraryScreen } from './ui/CriteriaLibrary';
 import { ReportsScreen } from './ui/Reports';
 import { LoadCaseEditor } from './ui/LoadCaseEditor';
@@ -88,7 +90,9 @@ export default function App() {
           </select>
         </label>
         <div className="spacer" />
+        <InstallButton />
       </header>
+      <div className="banner-slot"><BackupBanner dbData={dbData} /></div>
 
       <nav className="sidenav">
         {NAV.map((n) => (
@@ -126,9 +130,11 @@ export default function App() {
       <footer className="statusbar">
         <span className={online ? 'ok' : 'off'}>● {online ? 'Online' : 'Offline: all functions available'}</span>
         <span>Data: {status === 'UNVERIFIED' ? 'extracted from booklet, NOT verified' : status === 'DEMO' ? 'demo vessel' : 'verified'}</span>
+        <StorageBadge />
         <span>Engine {ENGINE_VERSION}</span>
         <span className="disclaimer">⚠ Not an approved stability instrument. For planning and testing only.</span>
       </footer>
+      <UpdatePrompt />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { VESSELS, type VesselEntry } from './data/vessels';
 import type { UserVesselEntry } from './importer/dbFile';
 import { defaultLimits } from './engine/opLimits';
+import * as storage from './storage';
 import type { CriteriaLibrary, CriterionDef, GroupDef, LoadCase, MomentDef, Vessel } from './engine/types';
 
 const KEY = 'stabilitysoft.loadcases.v3';
@@ -34,12 +35,13 @@ export function toEntry(u: UserVesselEntry): VesselEntry {
 
 export function useUserVessels() {
   const [list, setList] = useState<UserVesselEntry[]>(() => {
-    try { const x = JSON.parse(localStorage.getItem(VKEY) ?? '[]'); return Array.isArray(x) ? x : []; } catch { return []; }
+    const x = storage.get<UserVesselEntry[]>(VKEY); return Array.isArray(x) ? x : [];
   });
-  const [saveError, setSaveError] = useState<string | null>(null);
+  // storage errors (e.g. disk full) come from the storage layer
+  const [saveError, setSaveError] = useState<string | null>(storage.getStatus().error);
+  useEffect(() => storage.onStatus((st) => setSaveError(st.error)), []);
   useEffect(() => {
-    try { localStorage.setItem(VKEY, JSON.stringify(list)); setSaveError(null); }
-    catch { setSaveError('Browser storage is full: the latest vessel changes are not saved. Save the database to a file now.'); }
+    storage.set(VKEY, list);
   }, [list]);
   return {
     list,
@@ -53,8 +55,8 @@ export function useUserVessels() {
 function load(): Saved {
   let saved: Saved = {};
   try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) saved = JSON.parse(raw) as Saved;
+    const raw = storage.get<Saved>(KEY);
+    if (raw && typeof raw === 'object') saved = structuredClone(raw);
   } catch { /* storage unavailable */ }
   for (const v of VESSELS) {
     if (!Array.isArray(saved[v.id]) || saved[v.id].length === 0) saved[v.id] = structuredClone(v.defaultLoadCases);
@@ -70,14 +72,14 @@ export function useLoadCases(entries: VesselEntry[] = VESSELS) {
   const [all, setAll] = useState<Saved>(load);
   const [active, setActiveState] = useState<{ vesselId: string; caseId: string }>(() => {
     try {
-      const a = JSON.parse(localStorage.getItem(ACTIVE) ?? 'null');
+      const a = storage.get<{ vesselId: string; caseId: string }>(ACTIVE) ?? null;
       if (a && typeof a.vesselId === 'string') return a;
     } catch { /* ignore */ }
     return { vesselId: VESSELS[0].id, caseId: '' };
   });
 
-  useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(all)); } catch { /* ignore */ } }, [all]);
-  useEffect(() => { try { localStorage.setItem(ACTIVE, JSON.stringify(active)); } catch { /* ignore */ } }, [active]);
+  useEffect(() => { storage.set(KEY, all); }, [all]);
+  useEffect(() => { storage.set(ACTIVE, active, { userData: false }); }, [active]);
 
   const entry = entries.find((v) => v.id === active.vesselId) ?? entries[0];
   const cases = all[entry.id]?.length ? all[entry.id] : entry.defaultLoadCases;
@@ -139,15 +141,15 @@ const LIB_KEY = 'stabilitysoft.library.v1';
 export function useLibrary() {
   const [lib, setLib] = useState<CriteriaLibrary>(() => {
     try {
-      const raw = localStorage.getItem(LIB_KEY);
+      const raw = storage.get<CriteriaLibrary>(LIB_KEY);
       if (raw) {
-        const x = JSON.parse(raw) as CriteriaLibrary;
+        const x = raw;
         if (Array.isArray(x.criteria) && Array.isArray(x.groups)) return x;
       }
     } catch { /* ignore */ }
     return { criteria: [], groups: [] };
   });
-  useEffect(() => { try { localStorage.setItem(LIB_KEY, JSON.stringify(lib)); } catch { /* ignore */ } }, [lib]);
+  useEffect(() => { storage.set(LIB_KEY, lib); }, [lib]);
   return {
     lib,
     addCriterion: (c: CriterionDef) => setLib((l) => ({ ...l, criteria: l.criteria.some((x) => x.id === c.id) ? l.criteria.map((x) => (x.id === c.id ? c : x)) : [...l.criteria, c] })),
