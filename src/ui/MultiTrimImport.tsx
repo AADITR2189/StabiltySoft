@@ -9,6 +9,7 @@ import { applyToVessel, compareRows, expectedRows, storedRows, type Provenance }
 import { buildTrimImports, clearKind, isTrimTablePage, pagesText, parsePages, setChecks, splitTrims, trimChecks, type TrimImport, type TrimKind, type TrimSplit } from '../importer/multiTrim';
 import type { Check } from '../importer/checks';
 import { ReviewTable, SourceGrid } from './ImportTables';
+import { applyRefs, DRAFT_REF_LABEL, KN_BASIS_LABEL, type DraftRef, type KnBasis } from '../importer/references';
 import { PdfPage } from './PdfPage';
 
 interface Props { kind: TrimKind; doc: SourceDoc; vessel: Vessel; target: UserVesselEntry | undefined; save: (u: UserVesselEntry) => void }
@@ -31,7 +32,13 @@ export function MultiTrimSection({ kind, doc, vessel, target, save }: Props) {
   const blocks = useMemo(() => splitTrims(tables, method, { trimCol }), [tables, method, trimCol]);
   const [mapping, setMapping] = useState<Mapping | null>(null);
   useEffect(() => { setMapping(blocks.length ? autoMapping(def, blocks[0].rows, mapping?.decimal ?? '.', vessel.lbp) : null); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [blocks]);
-  const [imports, setImports] = useState<TrimImport[]>([]);
+  const [base, setImports] = useState<TrimImport[]>([]);
+  const [draftRef, setDraftRef] = useState<DraftRef>('MID');
+  const [draftX, setDraftX] = useState<number | undefined>(undefined);
+  const [knBasis, setKnBasis] = useState<KnBasis>('DISP');
+  // drafts at LCF / AP / FP → midship; KN rows by draft / volume → displacement (each with the trim of its table)
+  const refd = useMemo(() => base.map((t) => { const r = typeof t.trim === 'number' ? applyRefs(kind, t.conv, vessel, t.trim, { draftRef, draftX, knBasis }) : { conv: t.conv, checks: [] }; return { t: { ...t, conv: r.conv }, checks: r.checks }; }), [base, kind, vessel, draftRef, draftX, knBasis]);
+  const imports = useMemo(() => refd.map((x) => x.t), [refd]);
   useEffect(() => { setImports(mapping ? buildTrimImports(kind, blocks, { ...mapping, lbp: vessel.lbp }) : []); setResult(null); setConfirm(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [blocks, mapping, vessel.lbp, kind]);
   const [open, setOpen] = useState<string | null>(null);
   const [replaceAll, setReplaceAll] = useState(true);
@@ -39,7 +46,7 @@ export function MultiTrimSection({ kind, doc, vessel, target, save }: Props) {
   const [confirm, setConfirm] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const checks = useMemo(() => new Map<string, Check[]>(mapping ? imports.map((t) => [t.key, trimChecks(kind, t, imports, vessel, mapping)]) : []), [imports, vessel, mapping, kind]);
+  const checks = useMemo(() => new Map<string, Check[]>(mapping ? imports.map((t, i) => [t.key, [...refd[i].checks, ...trimChecks(kind, t, imports, vessel, mapping)]]) : []), [imports, refd, vessel, mapping, kind]);
   const inc = imports.filter((t) => t.include);
   const set = useMemo(() => setChecks(kind, inc), [kind, inc]);
   const withErr = inc.filter((t) => checks.get(t.key)?.some((c) => c.level === 'error'));
@@ -112,7 +119,18 @@ export function MultiTrimSection({ kind, doc, vessel, target, save }: Props) {
               <select value={trimCol} onChange={(e) => setTrimCol(Number(e.target.value))}>{(doc.tables[0]?.rows[0] ?? []).map((h, j) => <option key={j} value={j}>{j + 1}: {h || '(no heading)'}</option>)}</select>
             </label>
           )}
+          {kind === 'HYDRO' && <label>Drafts in the tables are measured
+            <select value={draftRef} onChange={(e) => setDraftRef(e.target.value as DraftRef)}>
+              {(Object.keys(DRAFT_REF_LABEL) as DraftRef[]).map((k) => <option key={k} value={k}>{DRAFT_REF_LABEL[k]}</option>)}
+            </select></label>}
+          {kind === 'HYDRO' && draftRef === 'X' && <label>X of the draft mark (m from AP)<input type="number" step="any" value={draftX ?? ''} onChange={(e) => setDraftX(e.target.value === '' ? undefined : Number(e.target.value))} /></label>}
+          {kind === 'KN' && <label>First column of the tables gives
+            <select value={knBasis} onChange={(e) => setKnBasis(e.target.value as KnBasis)}>
+              {(Object.keys(KN_BASIS_LABEL) as KnBasis[]).map((k) => <option key={k} value={k}>{KN_BASIS_LABEL[k]}</option>)}
+            </select></label>}
         </div>
+        {kind === 'HYDRO' && draftRef !== 'MID' && <p className="muted small">Trimmed tables are stored with drafts at midship: each draft is converted with d_MS = d + t·(x − L/2)/L, x = where the draft is measured (for the LCF, the LCF of that row). Every converted cell shows the conversion.</p>}
+        {kind === 'KN' && knBasis === 'DRAFT' && <p className="muted small">Import the hydrostatics of every trim first: each draft is turned into a displacement using the hydrostatic table of the same trim.</p>}
         <p className="muted small">
           Trim is read as + by the stern: "No Trim" / "Trim zero" / "even keel" = 0, "Trim: aft 0.500/57.400" = +0.5, "Trim fwd 1.000" or "by the head 1.0" = −1.0.
           {doc.kind === 'PDF' && (titlePages.length > 0 ? <> {label[0].toUpperCase() + label.slice(1)} table pages found automatically: {pagesText(titlePages)}.</> : <> No {label} table pages found automatically: type the pages.</>)}
@@ -177,7 +195,7 @@ export function MultiTrimSection({ kind, doc, vessel, target, save }: Props) {
                   <div style={{ flex: '1 1 560px', minWidth: 0 }}>
                     <ReviewTable conv={t.conv} def={def} mapping={mapping} flagged={new Set(cs.flatMap((c) => (c.level !== 'ok' ? c.rows ?? [] : [])))}
                       srcLabel={(src) => { const r = t.refs[src]; return r ? `${r.page ? `p${r.page}` : r.table.replace(/^Sheet /, '')} r${r.row + 1}` : String(src + 1); }}
-                      onEdit={(src, key, text) => upd(t.key, { conv: { ...t.conv, rows: t.conv.rows.map((r) => (r.src !== src ? r : typeof key === 'number' ? { ...r, kn: r.kn!.map((c, j) => (j === key ? editCell(c, text, false) : c)) } : { ...r, cells: { ...r.cells, [key]: editCell(r.cells[key], text, false) } })) } })} />
+                      onEdit={(src, key, text) => { const bc = base.find((x) => x.key === t.key)!.conv; upd(t.key, { conv: { ...bc, rows: bc.rows.map((r) => (r.src !== src ? r : typeof key === 'number' ? { ...r, kn: r.kn!.map((c, j) => (j === key ? editCell(c, text, false) : c)) } : { ...r, cells: { ...r.cells, [key]: editCell(r.cells[key], text, false) } })) } }); }} />
                     <div className="form-row" style={{ marginTop: 8 }}>
                       <label style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={t.reviewed} onChange={(ev) => upd(t.key, { reviewed: ev.target.checked })} /> I compared trim {t.trim} m with the source</label>
                       <button className="ghost" onClick={() => { const i = imports.findIndex((x) => x.key === t.key); const nx = imports.slice(i + 1).find((x) => x.include); upd(t.key, { reviewed: true }); setOpen(nx?.key ?? null); }}>Compared, open next trim →</button>

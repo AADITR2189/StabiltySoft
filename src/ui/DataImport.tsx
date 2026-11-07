@@ -7,6 +7,7 @@ import type { UserVesselEntry } from '../importer/dbFile';
 import { DATASETS, datasetDef, type DatasetKind } from '../importer/datasets';
 import { autoMapping, convert, editCell, type Conversion, type Mapping } from '../importer/convert';
 import { checkConversion } from '../importer/checks';
+import { applyRefs, DRAFT_REF_LABEL, KN_BASIS_LABEL, type DraftRef, type KnBasis } from '../importer/references';
 import { applyToVessel, applyWeights, compareRows, datasetKey, expectedRows, SORTED, storedRows, type ApplyOptions, type Provenance } from '../importer/apply';
 import { ACCEPT, fromPastedText, readSource, type SourceDoc } from '../importer/sources';
 import { pagesText, parsePages } from '../importer/multiTrim';
@@ -54,6 +55,9 @@ export function DataImportScreen(p: Props) {
   const [tankGroup, setTankGroup] = useState<TankGroup>('BALLAST');
   const [tankDensity, setTankDensity] = useState(1.025);
   const [consumable, setConsumable] = useState(false);
+  const [draftRef, setDraftRef] = useState<DraftRef>('MID');
+  const [draftX, setDraftX] = useState<number | undefined>(undefined);
+  const [knBasis, setKnBasis] = useState<KnBasis>('DISP');
 
   // source
   const [doc, setDoc] = useState<SourceDoc | null>(null);
@@ -70,7 +74,7 @@ export function DataImportScreen(p: Props) {
 
   // mapping and conversion
   const [mapping, setMapping] = useState<Mapping | null>(null);
-  const [conv, setConv] = useState<Conversion | null>(null);
+  const [baseConv, setConv] = useState<Conversion | null>(null);
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const [verifier, setVerifier] = useState('');
   const [confirm, setConfirm] = useState(false);
@@ -93,7 +97,10 @@ export function DataImportScreen(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapping, vessel.lbp]);
 
-  const checks = useMemo(() => (conv ? checkConversion(kind, conv, vessel, { density: tankDensity }) : []), [conv, kind, vessel, tankDensity]);
+  // drafts at LCF / AP / FP → midship; KN rows by draft / volume → displacement
+  const refd = useMemo(() => (baseConv ? applyRefs(kind, baseConv, vessel, trim, { draftRef, draftX, knBasis }) : null), [baseConv, kind, vessel, trim, draftRef, draftX, knBasis]);
+  const conv = refd?.conv ?? null;
+  const checks = useMemo(() => (conv ? [...(refd?.checks ?? []), ...checkConversion(kind, conv, vessel, { density: tankDensity })] : []), [conv, refd, kind, vessel, tankDensity]);
   const cellErrors = conv ? conv.rows.reduce((s, r) => s + [...Object.values(r.cells), ...(r.kn ?? [])].filter((c) => c.status === 'error').length, 0) : 0;
   const edited = conv ? conv.rows.reduce((s, r) => s + [...Object.values(r.cells), ...(r.kn ?? [])].filter((c) => c.status === 'edited').length, 0) : 0;
   const missingReq = def.fields.filter((f) => f.required && (mapping?.cols[f.key] ?? -1) < 0);
@@ -158,11 +165,11 @@ export function DataImportScreen(p: Props) {
 
   const setMap = (patch: Partial<Mapping>) => mapping && setMapping({ ...mapping, ...patch });
   const setCell = (src: number, key: string | number, text: string) => {
-    if (!conv) return;
+    if (!baseConv) return;
     const isText = typeof key === 'string' && def.fields.find((f) => f.key === key)?.type === 'text';
     setConv({
-      ...conv,
-      rows: conv.rows.map((r) => {
+      ...baseConv,
+      rows: baseConv.rows.map((r) => {
         if (r.src !== src) return r;
         if (typeof key === 'number') return { ...r, kn: r.kn!.map((c, j) => (j === key ? editCell(c, text, false) : c)) };
         return { ...r, cells: { ...r.cells, [key]: editCell(r.cells[key], text, !!isText) } };
@@ -199,6 +206,15 @@ export function DataImportScreen(p: Props) {
             </select>
           </label>
           {!isKv && (kind === 'HYDRO' || kind === 'KN') && <label>Trim of this table (m, + by stern)<input type="number" step="any" value={trim} onChange={(e) => setTrim(Number(e.target.value))} /></label>}
+          {!isKv && kind === 'HYDRO' && <label>Drafts in this table are measured
+            <select value={draftRef} onChange={(e) => setDraftRef(e.target.value as DraftRef)}>
+              {(Object.keys(DRAFT_REF_LABEL) as DraftRef[]).map((k) => <option key={k} value={k}>{DRAFT_REF_LABEL[k]}</option>)}
+            </select></label>}
+          {!isKv && kind === 'HYDRO' && draftRef === 'X' && <label>X of the draft mark (m from AP)<input type="number" step="any" value={draftX ?? ''} onChange={(e) => setDraftX(e.target.value === '' ? undefined : Number(e.target.value))} /></label>}
+          {!isKv && kind === 'KN' && <label>First column of the table gives
+            <select value={knBasis} onChange={(e) => setKnBasis(e.target.value as KnBasis)}>
+              {(Object.keys(KN_BASIS_LABEL) as KnBasis[]).map((k) => <option key={k} value={k}>{KN_BASIS_LABEL[k]}</option>)}
+            </select></label>}
           {!isKv && kind === 'TANK' && <>
             <label>Tank name
               <input list="tank-names" value={tankName} onChange={(e) => {
